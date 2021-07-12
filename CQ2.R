@@ -103,39 +103,49 @@ RisingConcentrationEstimateMinMax <- function(Discharge, RisingConcentration, St
 
 
 #Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
-precip <- read.csv("72286903171Precip.csv", stringsAsFactors = F)
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
+precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
 
 #GageFieldMeasurements <- read.csv("G:/My Drive/GrayLab/Projects/Plastics/Articles Publish/Active/Stream Modeling/Riverside/GageData.csv")
-sampledata <- read.csv("SampleMetaData.csv")
-param_cd <- read.csv("param_cd.csv")
+sampledata <- read.csv("Data/SampleMetaData.csv")
+param_cd <- read.csv("Data/param_cd.csv")
 #Particles that do not float.
-NoFloat <- read.csv("MasterNoFloat_Clean.csv")
-Q <- read.csv("SiteQ11066460.csv")
-measurements <- read.csv("measurements.csv")
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
-RatingCurve <- read_excel("GageData.xlsx", sheet = "Rating Curve")
+NoFloat <- read.csv("Data/MasterNoFloat_Clean.csv")
+Q <- read.csv("Data/SiteQ11066460.csv")
+measurements <- read.csv("Data/measurements.csv")
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
+RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
 #Particles with sinking removed.
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data/Santa Ana River SamplesNoFloatRemoved")
-csvfiles <- list.files(pattern = ".csv", recursive = T, full.names = T)
-filelistcsv <- list.files(pattern = ".csv", recursive = T, full.names = T) %>%
-  lapply(fread)
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
-PlasticMeasurements <- read_excel("SantaAna.xlsx", sheet = "PlasticMeasurements")
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/RouseProfilePaper/Data/Processed Data/DataForPublication")
-WSData <- read_excel("Data_WaldschlaegerEdited.xlsx")
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/ParticleSizeConversionData/Plastic Masses")
-Master <- read.csv("MasterSheet - Sheet1.csv") #Why isn't this being used as the particle size data? 
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data/Santa Ana River SamplesNoFloatRemoved")
+csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
+
+filelistcsv_1 <- csvfiles_1 %>%
+  lapply(read.csv)
+
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
+PlasticMeasurements <- read_excel("Data/Riverside/SantaAna.xlsx", sheet = "PlasticMeasurements")
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/RouseProfilePaper/Data/Processed Data/DataForPublication")
+WSData <- read_excel("Data/Data_WaldschlaegerEdited.xlsx")
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/ParticleSizeConversionData/Plastic Masses")
+Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv") #Why isn't this being used as the particle size data? 
 Mast <- Master[complete.cases(Master$Mass),]
 massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
 
 #Do a test to make sure that 17 particles were removed.
-setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Lab/Santa Ana River Samples")
-csvfiles <- list.files(pattern = ".csv", recursive = T, full.names = T)
-filelistcsv <- list.files(pattern = ".csv", recursive = T, full.names = T) %>%
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Lab/Santa Ana River Samples")
+csvfiles_2 <- list.files("Data/Lab/Macroplastic/Santa Ana River Samples",  pattern = ".csv", recursive = T, full.names = T)
+filelistcsv_2 <- csvfiles_2 %>%
   lapply(fread)
 
-nrow(rbindlist(filelistcsv, fill = T))
+#strange, this is looking like more particles are in the updated data. Why? what did I do back then lol.
+#Took a look at 3:04 for settling particles, not sure where they are in the image that I have for them. 
+#Went through and cleaned the data on 7/12 to make sure it was all in line. Should have all settling particles removed now. not sure what happened before. 
+for(n in 1:length(csvfiles_1)){
+  print(csvfiles_1[n])
+  print(csvfiles_2[n])
+  print(nrow(filelistcsv_1[[n]]) - nrow(filelistcsv_2[[n]]))
+}
+nrow(rbindlist(filelistcsv_1, fill = T)) - nrow(rbindlist(filelistcsv_2, fill = T))
 
 #Don't run this code again, just useful for first grab.
 #sites <- c("11066460")
@@ -314,13 +324,13 @@ totalConcentrationDischarge <- sampledataclean %>%
 #Correcting Concentrations
 
 KnownNegMicro <- WSData %>%
-  dplyr::filter(`Density [g/cm³]` > 1)
+  dplyr::filter(`Density [g/cm?]` > 1)
 
 KnownMinimumNegMicro <- max(KnownNegMicro$`Mean Velocity [m/s]`) * -1
 KnownMaxNeg <- min(KnownNegMicro$`Mean Velocity [m/s]`) * -1
 
 KnownPosMicro <- WSData %>%
-  dplyr::filter(`Density [g/cm³]` < 1)
+  dplyr::filter(`Density [g/cm?]` < 1)
 
 KnownMinPos <- min(KnownPosMicro$`Mean Velocity [m/s]`)
 KnownMaxPos <- max(KnownPosMicro$`Mean Velocity [m/s]`)
