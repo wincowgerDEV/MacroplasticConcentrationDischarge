@@ -9,98 +9,9 @@ library(viridis)
 library(tidyr)
 library(MASS)
 library(fitdistrplus)
-
-header.true <- function(df) {
-  names(df) <- as.character(unlist(df[1,]))
-  df[-c(1:2),]
-}
-
-nathantheme <- function() {
-  theme(legend.title=element_text(size=14, face="bold"))+
-    theme(legend.text = element_text(size = 12, face="bold", family = "Times New Roman"))+
-    theme(axis.line = element_line(size=1, linetype = "solid"))+
-    theme(axis.text = element_text(size=12, face="bold", color = "black", family = "Times New Roman"))+
-    theme(axis.ticks.length = unit(5, "pt"))+
-    theme(axis.ticks= element_line(size=1, color = "black"))+
-    theme(axis.title = element_text(size=14, face="bold", family = "Times New Roman"))+
-    theme(plot.title = element_text(hjust = 0.5))+
-    theme(plot.title = element_text(size = 18, face = "bold", family = "Times New Roman"))+
-    theme(axis.title.x = element_text(margin = margin(10,10,10,10,"pt"), family = "Times New Roman"))+
-    theme(axis.title.y = element_text(margin = margin(10,10,10,10,"pt"), family = "Times New Roman"))+
-    theme(panel.background =element_rect(fill="white"))+
-    theme(panel.grid=element_line(color="grey100", size = 0.5))#+
-    #annotation_logticks(base=10, size = 1)
-}
-
-bootks <- function(x, y){
-  B <- 10000
-  ksd <- numeric(B)
-  nx = length(x)
-  ny = length(y)
-  
-  set.seed(34345)
-  for (i in 1:B) {
-    bootx <- sample(x, size=nx, replace = TRUE)
-    booty <- sample(y, size=ny, replace = TRUE)
-    ksd[i] <- unname(ks.test(bootx, booty)$statistic)
-  }
-  return(ksd)
-}
-
-BootMean <- function(data) {
-  B <- 10000
-  mean <- numeric(B)
-  n = length(data)
-  
-  set.seed(34345)
-  for (i in 1:B) {
-    boot <- sample(1:n, size=n, replace = TRUE)
-    mean[i] <- mean(data[boot])
-  }
-  return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
-}
-
-RouseAverageSurfaceSample <- function(Concentration, RouseNumber, SampleDepth, StreamDepth) {
-  SampleLocation <- (StreamDepth-SampleDepth)/StreamDepth
-  ReferenceLocation = (SampleLocation+1)/2
-  Sample <- seq(SampleLocation, 0.99, by = 0.001)
-  SampleRegion <- rep(Concentration, length(Sample))
-  NormDepth <- seq(0.05,SampleLocation, by= 0.001) #Will break if the sample location is less than 0.05
-  Profile <- Concentration * (((1-NormDepth)/NormDepth)*((ReferenceLocation)/(1-ReferenceLocation)))^RouseNumber
-  ProfileFull <- c(Profile, SampleRegion)
-  return(mean(ProfileFull))
-}
-
-
-logMaintain <- function(x) {
-  x <- ifelse(x == 0, 0, ifelse(x > 0, log10(x*1000000000), -log10(abs(x*1000000000))))
-  return(x)
-}
-
-reverselogMaintain <- function (x) {
-  x <- ifelse(x == 0, 0, ifelse(x > 0, 10^x/1000000000, -1*10^abs(x)/1000000000))
-  return(x)
-}
-
-RisingConcentrationEstimateMinMax <- function(Discharge, RisingConcentration, StreamDepth, SampleDepth, ShearVelocity, KnownRisingVelocity){
-  ConcentrationLoopRising <- c()
-  for(Vel in reverselogMaintain(KnownRisingVelocity)) {
-    RouseNumberModel <- Vel/(0.4*ShearVelocity)
-    if(RouseNumberModel > 2.5) { 
-      next
-    }
-    else if(RouseNumberModel < -2.5) {
-      ConcentrationEstimate = Discharge*(SampleDepth/StreamDepth)*RisingConcentration/Discharge 
-    }
-    else {
-      ConcentrationEstimate = RouseAverageSurfaceSample(RisingConcentration, RouseNumberModel, SampleDepth, StreamDepth)
-    }
-    ConcentrationLoopRising <- c(ConcentrationLoopRising, ConcentrationEstimate)
-  }
-  RouseAverageConcentrationRising <- BootMean(ConcentrationLoopRising)
-  return(c(RouseAverageConcentrationRising, max(ConcentrationLoopRising), min(ConcentrationLoopRising)))
-}
-
+library(EcoHydRology)
+library(hydrostats)
+library(plotly)
 
 #Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
@@ -127,12 +38,13 @@ filelistcsv <- filelistcsv_1
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
 PlasticMeasurements <- read_excel("Data/Riverside/SantaAna.xlsx", sheet = "PlasticMeasurements")
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/RouseProfilePaper/Data/Processed Data/DataForPublication")
-WSData <- read_excel("Data/Data_WaldschlaegerEdited.xlsx")
+#WSData <- read_excel("Data/Data_WaldschlaegerEdited.xlsx")
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/ParticleSizeConversionData/Plastic Masses")
 Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv") #Why isn't this being used as the particle size data? 
 Mast <- Master[complete.cases(Master$Mass),]
 massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
 
+ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
 #Do a test to make sure that 17 particles were removed.
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Lab/Santa Ana River Samples")
 csvfiles_2 <- list.files("Data/Lab/Macroplastic/Santa Ana River Samples",  pattern = ".csv", recursive = T, full.names = T)
@@ -174,6 +86,7 @@ velocitycurve <- gam(log10(chan_velocity) ~ log10(chan_discharge), data = measur
 widthcurve <- gam(log10(chan_width) ~ log10(chan_discharge), data = measurements)
 areacurve <- gam(log10(chan_area) ~ log10(chan_discharge), data = measurements)
 
+#Discharge figure ----
 Discharge <- Q %>%
   mutate(dateTime = as.POSIXct(strptime(dateTime, format = "%Y-%m-%d %H:%M:%S"), tz = "America/Los_Angeles")) %>%
   rename(INDEP = X_00065_00000) %>%
@@ -220,7 +133,16 @@ for(csv in csvfiles) {
   datamerge <- rbind(df, datamerge)
 }
 
-RemoveThese <- c("Santa Ana 2 2 5 35pm 1 min bomb 24.67","Santa Ana 2-13-19 6 30pm 54 min integrate 8.40g","Santa Ana Right Bank 2 2 1 45 10 min", "Santa Ana 2-13-19 5:37 30 min Full Depth Sample 5mm net 1090.48g", "win cowger Sample Ballona 11 56am 3 20 19 30 min halfnet", "Santa Ana 2-13-19 6:30pm 54 min integrate", "Santa Ana 2/2 5:35pm 1 min bomb", "Santa Ana 1-17-19 3:04pm 10 min 2/2", "Santa Ana 1-17-19 3:04pm 10 min 2/3", "Santa Ana 1-17-19 3:04pm 10 min 2/4", "Santa Ana Right Bank 2/2 1:45 10 min")
+RemoveThese <- c("Santa Ana 2 2 5 35pm 1 min bomb 24.67",
+                 "Santa Ana 2-13-19 6 30pm 54 min integrate 8.40g",
+                 "Santa Ana Right Bank 2 2 1 45 10 min", 
+                 "win cowger Sample Ballona 11 56am 3 20 19 30 min halfnet", 
+                 "Santa Ana 2-13-19 6:30pm 54 min integrate", 
+                 "Santa Ana 2/2 5:35pm 1 min bomb", 
+                 "Santa Ana 1-17-19 3:04pm 10 min 2/2", 
+                 "Santa Ana 1-17-19 3:04pm 10 min 2/3", 
+                 "Santa Ana 1-17-19 3:04pm 10 min 2/4", 
+                 "Santa Ana Right Bank 2/2 1:45 10 min")
 
 MasterListCompare <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
@@ -281,7 +203,7 @@ RunoffSamples <- c("Santa Ana 2-2-19 3 32pm 10 mins 2 2 181.63g HH", "Santa Ana 
 
 sampledataclean <- sampledataclean_pre %>%
   mutate(chan_depth = chan_area/chan_width* 0.3048) %>% #in meters
-  mutate(SampleSize = ifelse(chan_depth < 0.4, chan_depth * 0.4 * chan_velocity * 0.3048 * Duration..min.*60, 0.3*0.4* chan_velocity * 0.3048 * Duration..min.*60)) %>% #in cubic meters
+  mutate(SampleSize = ifelse(chan_depth < 0.4, chan_depth * 0.4 * chan_velocity * 0.3048 * Duration..min.*60, 0.3*0.4* chan_velocity * 0.3048 * Duration..min.*60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
   mutate(particlespersecond = 1 /(Duration..min. *60)) %>%
   mutate(concentration = 1/SampleSize) %>%
   mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
@@ -350,49 +272,87 @@ totalConcentrationDischarge <- sampledataclean %>%
   mutate(countconcentration = count/SampleSize*proportion_sampled) %>%
   mutate(areaconcentration = sumarea/SampleSize*proportion_sampled) %>%
   mutate(massconcentration = summass/SampleSize*proportion_sampled) %>%
+  mutate(measured_mass = Mass..g./SampleSize*proportion_sampled) %>%
   arrange(desc(dateTime))
 
 #ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = areaconcentrationadj)) + geom_abline() + geom_point() + scale_y_log10() + scale_x_log10()
 ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point() + scale_y_log10() + scale_x_log10() + geom_abline(intercept = 0, slope = 1)
 
-MassConcentration <- sampledataclean %>%
-  dplyr::select(SampleName, Mass..g., SampleSize, chan_discharge_m, dateTime, Date) %>%
-  distinct() %>%
-  mutate(massconc = Mass..g./SampleSize) %>%
-  arrange(desc(dateTime))
-
 #Linear Relatoinship, concentration - discharge
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000))  + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + coord_fixed()
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
 
-#Power relationship
-ggplot(totalConcentrationDischarge,aes(x = chan_discharge_m,y = areaconcentration)) +
-  geom_point() + 
-  stat_smooth(method = 'nls', formula = 'y~a*x^b', start = list(a = 1,b=1),se=FALSE) + scale_x_log10() + scale_y_log10()
-
-shapiro.test(log10(totalConcentrationDischarge$countconcentration))
-
-countmodel <- gam(log10(totalConcentrationDischarge$countconcentrationadj) ~ log10(totalConcentrationDischarge$chan_discharge_m))
-
-summary(countmodel)
-
-shapiro.test(log10(totalConcentrationDischarge$areaconcentrationadj))
-
-areamodel <- gam(log10(totalConcentrationDischarge$areaconcentrationadj) ~ log10(totalConcentrationDischarge$chan_discharge_m))
-
-summary(areamodel)
-
 #Hysteresis behavior
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration))  + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + coord_fixed()# + geom_text(aes(x = chan_discharge, y = areaconcentration,label = SampleName))
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
+
+mass_concentration_model <- lm(log10(totalConcentrationDischarge$massconcentration) ~ log10(totalConcentrationDischarge$chan_discharge_m))
+summary(mass_concentration_model)
+
+predict(mass_concentration_model, c(10, 100))
+
 
 ggplot(MassConcentration, aes(x = chan_discharge_m, y = massconc)) + scale_color_viridis_d() + geom_path(aes(color = Date), size = 2) + geom_point() + scale_x_log10() + scale_y_log10() + theme_gray() + labs(x = "Discharge (cms)", y = "Mass Concentration (g/m^3)")#+ geom_text(aes(label = SampleName))
+#Estimate Flux ----
+#Constant Mean
+Flux <- Discharge %>%
+  filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles")) %>%
+  mutate(cubic_m_s = DEP * 0.0283168) 
 
-#summofmassperareabin
-sampledataclean %>%
-  dplyr::group_by(equalintervalarea) %>%
-  dplyr::summarise(Mass = sum(particlemass)) %>%
-  ggplot(aes(x = equalintervalarea, y = Mass)) + scale_fill_viridis_d() + geom_bar(stat = "identity", position = "dodge") + scale_y_log10() + theme_classic() #+ geom_text(aes(label = count), position = position_dodge(width = 1))
+constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * mean(totalConcentrationDischarge$massconcentration) * 15 * 60, na.rm = T)/10^6
+discharge_regression_metric_tonnes <- sum(10^(log10(Flux$cubic_m_s)*coef(mass_concentration_model)[2] + coef(mass_concentration_model)[1]) * 15 * 60, na.rm = T)/10^6
 
+runoff_event_ranges = tibble(
+  start = c("2018-10-04 02:15:00", 
+            "2018-10-12 22:30:00", 
+            "2018-11-29 10:30:00", 
+            "2018-12-06 13:00:00", 
+            "2019-01-14 13:00:00",
+            "2019-01-31 15:15:00",
+            "2019-02-02 15:15:00",
+            "2019-02-14 01:45:00",
+            "2019-02-17 06:45:00",
+            "2019-02-21 01:00:00",
+            "2019-03-02 05:00:00",
+            "2019-03-06 08:00:00",
+            "2019-03-20 14:45:00",
+            "2019-05-16 09:30:00",
+            "2019-05-19 03:45:00",
+            "2019-05-22 12:00:00",
+            "2019-05-27 00:45:00"),
+  end = c( "2018-10-04 12:00:00",
+            "2018-10-14 14:30:00",
+            "2018-11-30 22:30:00",
+            "2018-12-08 07:30:00",
+            "2019-01-19 15:15:00",
+            "2019-02-01 13:30:00",
+            "2019-02-06 09:00:00",
+            "2019-02-15 17:45:00",
+            "2019-02-18 20:30:00",
+            "2019-02-22 08:00:00",
+            "2019-03-04 01:30:00",
+            "2019-03-08 04:00:00",
+            "2019-03-21 11:45:00",
+            "2019-05-16 20:45:00",
+            "2019-05-20 19:45:00",
+            "2019-05-24 13:00:00",
+            "2019-05-27 13:15:00")
+  )
 
+runoff_dates <- Flux[0,]
+
+for(n in 1:nrow(runoff_event_ranges)){
+  runoff_dates <- Flux %>%
+    dplyr::filter(dateTime > as.POSIXct(unlist(runoff_event_ranges[n,1]), tz="America/Los_Angeles") & dateTime < as.POSIXct(unlist(runoff_event_ranges[n,2]), tz="America/Los_Angeles")) %>%
+    bind_rows(runoff_dates)
+}
+
+baseflow_dates <- Flux %>%
+  anti_join(runoff_dates)
+
+#Flux during runoff
+runoff_flux <- sum(runoff_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])) * 15 * 60)/10^6
+baseflow_flux <- sum(baseflow_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])) * 15 * 60, na.rm = T)/10^6
+#approximately 20 times more flux during runoff periods than dry periods. Suggests issues with current managment strategy.
