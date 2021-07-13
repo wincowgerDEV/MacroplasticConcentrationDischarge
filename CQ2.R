@@ -13,6 +13,19 @@ library(EcoHydRology)
 library(hydrostats)
 library(plotly)
 
+BootMean <- function(data) {
+  B <- 10000
+  mean <- numeric(B)
+  n = length(data)
+  
+  set.seed(34345)
+  for (i in 1:B) {
+    boot <- sample(1:n, size=n, replace = TRUE)
+    mean[i] <- mean(data[boot])
+  }
+  return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
+}
+
 #Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
 precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
@@ -352,7 +365,13 @@ for(n in 1:nrow(runoff_event_ranges)){
 baseflow_dates <- Flux %>%
   anti_join(runoff_dates)
 
-#Flux during runoff
+#Flux during runoff vs baseflow
+BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])
+BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])
+
 runoff_flux <- sum(runoff_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])) * 15 * 60)/10^6
 baseflow_flux <- sum(baseflow_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])) * 15 * 60, na.rm = T)/10^6
 #approximately 20 times more flux during runoff periods than dry periods. Suggests issues with current managment strategy.
+
+#Only 7 % of the time are we in these runoff periods, but they account for 10X of the flux. 
+nrow(runoff_dates)/nrow(Flux)
