@@ -26,6 +26,32 @@ BootMean <- function(data) {
   return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
 }
 
+BootSlope <- function(x, y) {
+  B <- 10000
+  mean <- numeric(B)
+  n = length(x)
+  
+  set.seed(34345)
+  for (i in 1:B) {
+    boot <- sample(1:n, size=n, replace = TRUE)
+    mean[i] <- lm(y[boot] ~ x[boot])$coefficients[2]
+  }
+  return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
+}
+
+BootIntercept <- function(x, y) {
+  B <- 10000
+  mean <- numeric(B)
+  n = length(x)
+  
+  set.seed(34345)
+  for (i in 1:B) {
+    boot <- sample(1:n, size=n, replace = TRUE)
+    mean[i] <- lm(y[boot] ~ x[boot])$coefficients[1]
+  }
+  return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
+}
+
 #Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
 precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
@@ -302,20 +328,38 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
 
 mass_concentration_model <- lm(log10(totalConcentrationDischarge$massconcentration) ~ log10(totalConcentrationDischarge$chan_discharge_m))
+mass_concentration_model_slope_boot <- BootSlope(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
+mass_concentration_model_intercept_boot <- BootIntercept(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
+
 summary(mass_concentration_model)
+
+mass_concentration_model$coefficients[2]
 
 predict(mass_concentration_model, c(10, 100))
 
-
 ggplot(MassConcentration, aes(x = chan_discharge_m, y = massconc)) + scale_color_viridis_d() + geom_path(aes(color = Date), size = 2) + geom_point() + scale_x_log10() + scale_y_log10() + theme_gray() + labs(x = "Discharge (cms)", y = "Mass Concentration (g/m^3)")#+ geom_text(aes(label = SampleName))
+
 #Estimate Flux ----
+
 #Constant Mean
 Flux <- Discharge %>%
   filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles")) %>%
   mutate(cubic_m_s = DEP * 0.0283168) 
 
+mean_concentration_bootstrap <- BootMean(totalConcentrationDischarge$massconcentration)
+
 constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * mean(totalConcentrationDischarge$massconcentration) * 15 * 60, na.rm = T)/10^6
+min_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrationDischarge$massconcentration)[1] * 15 * 60, na.rm = T)/10^6
+max_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrationDischarge$massconcentration)[3] * 15 * 60, na.rm = T)/10^6
+
+
+#10^BootMean(log10(totalConcentrationDischarge$massconcentration))
+
+#Flux estimate using regression
 discharge_regression_metric_tonnes <- sum(10^(log10(Flux$cubic_m_s)*coef(mass_concentration_model)[2] + coef(mass_concentration_model)[1]) * 15 * 60, na.rm = T)/10^6
+discharge_regression_metric_tonnes_min <- sum(10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[1] + mass_concentration_model_intercept_boot[1]) * 15 * 60, na.rm = T)/10^6
+discharge_regression_metric_tonnes_max <- sum(10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[3] + mass_concentration_model_intercept_boot[3]) * 15 * 60, na.rm = T)/10^6
+
 
 runoff_event_ranges = tibble(
   start = c("2018-10-04 02:15:00", 
@@ -371,6 +415,35 @@ BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischar
 
 runoff_flux <- sum(runoff_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])) * 15 * 60)/10^6
 baseflow_flux <- sum(baseflow_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])) * 15 * 60, na.rm = T)/10^6
+
+runoff_baseflow_flux = runoff_flux + baseflow_flux
+
+runoff_flux_min <- sum(runoff_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])[1]) * 15 * 60)/10^6
+baseflow_flux_min <- sum(baseflow_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])[1]) * 15 * 60, na.rm = T)/10^6
+
+runoff_baseflow_flux_min = runoff_flux_min + baseflow_flux_min
+
+
+runoff_flux_max <- sum(runoff_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])[3]) * 15 * 60)/10^6
+baseflow_flux_max <- sum(baseflow_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])[3]) * 15 * 60, na.rm = T)/10^6
+
+runoff_baseflow_flux_max = runoff_flux_max+ baseflow_flux_max
+
+
+#Runoff flow
+sum(runoff_dates$cubic_m_s * 15 * 60) 
+sum(baseflow_dates$cubic_m_s * 15 * 60, na.rm = T)
+
+
+figure_table <- tibble(
+  annual_flux_tonnes = c(runoff_baseflow_flux, constant_mean_metric_tonnes, discharge_regression_metric_tonnes),
+  min_flux_tonnes    = c(runoff_baseflow_flux_min, min_constant_mean_metric_tonnes, discharge_regression_metric_tonnes_min),
+  max_flux_tonnes    = c(runoff_baseflow_flux_max, max_constant_mean_metric_tonnes, discharge_regression_metric_tonnes_max),
+  name               = c("runoff baseflow separation", "constant mean", "regression")
+)
+
+ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + geom_point() + geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + scale_x_log10(limits = c(0.01, 100)) + theme_gray() + labs(y = "", x = "Annual Flux (metric tonnes)")
+
 #approximately 20 times more flux during runoff periods than dry periods. Suggests issues with current managment strategy.
 
 #Only 7 % of the time are we in these runoff periods, but they account for 10X of the flux. 
