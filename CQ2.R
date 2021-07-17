@@ -79,13 +79,13 @@ PlasticMeasurements <- read_excel("Data/Riverside/SantaAna.xlsx", sheet = "Plast
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/RouseProfilePaper/Data/Processed Data/DataForPublication")
 #WSData <- read_excel("Data/Data_WaldschlaegerEdited.xlsx")
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/ParticleSizeConversionData/Plastic Masses")
-Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv") #Why isn't this being used as the particle size data? 
+Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv")
 Mast <- Master[complete.cases(Master$Mass),]
 massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
 
 ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
 #Do a test to make sure that 17 particles were removed.
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Lab/Santa Ana River Samples")
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelam3 stionships/Data/Processed Data/Lab/Santa Ana River Samples")
 csvfiles_2 <- list.files("Data/Lab/Macroplastic/Santa Ana River Samples",  pattern = ".csv", recursive = T, full.names = T)
 filelistcsv_2 <- csvfiles_2 %>%
   lapply(fread)
@@ -242,7 +242,7 @@ RunoffSamples <- c("Santa Ana 2-2-19 3 32pm 10 mins 2 2 181.63g HH", "Santa Ana 
 
 sampledataclean <- sampledataclean_pre %>%
   mutate(chan_depth = chan_area/chan_width* 0.3048) %>% #in meters
-  mutate(SampleSize = ifelse(chan_depth < 0.4, chan_depth * 0.4 * chan_velocity * 0.3048 * Duration..min.*60, 0.3*0.4* chan_velocity * 0.3048 * Duration..min.*60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(SampleSize = ifelse(chan_depth < 0.4, chan_depth * 0.4 * chan_velocity * 0.3048 * Duration..min.*60, 0.5*0.4* chan_velocity * 0.3048 * Duration..min.*60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
   mutate(particlespersecond = 1 /(Duration..min. *60)) %>%
   mutate(concentration = 1/SampleSize) %>%
   mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
