@@ -13,6 +13,9 @@ library(EcoHydRology)
 library(hydrostats)
 library(plotly)
 
+options(scipen = 999)
+
+
 BootMean <- function(data) {
   B <- 10000
   mean <- numeric(B)
@@ -64,7 +67,10 @@ NoFloat <- read.csv("Data/MasterNoFloat_Clean.csv")
 Q <- read.csv("Data/SiteQ11066460.csv")
 measurements <- read.csv("Data/measurements.csv")
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
+
 RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
+ggplot() + geom_line(data = RatingCurve, aes(x = INDEP, y = DEP)) + geom_point(data = measurements, aes(x = gage_height_va, y = chan_discharge, color = gage_va_change))
+
 #Particles with sinking removed.
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data/Santa Ana River SamplesNoFloatRemoved")
 csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
@@ -98,6 +104,7 @@ for(n in 1:length(csvfiles_1)){
   print(csvfiles_2[n])
   print(nrow(filelistcsv_1[[n]]) - nrow(filelistcsv_2[[n]]))
 }
+
 nrow(rbindlist(filelistcsv_1, fill = T)) - nrow(rbindlist(filelistcsv_2, fill = T))
 
 #Don't run this code again, just useful for first grab.
@@ -131,7 +138,6 @@ Discharge <- Q %>%
   rename(INDEP = X_00065_00000) %>%
   left_join(RatingCurve)
 
-options(scipen = 999)
 ggplot(Discharge)+ 
   geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1) + 
   scale_x_datetime(limits = c(as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-10-30 23:59:00", tz="America/Los_Angeles"))) + labs(y = "Discharge (cms)", x = "Date Time") + 
@@ -318,8 +324,45 @@ totalConcentrationDischarge <- sampledataclean %>%
 ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point() + scale_y_log10() + scale_x_log10() + geom_abline(intercept = 0, slope = 1)
 
 #Linear Relatoinship, concentration - discharge
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000))  + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + coord_fixed()
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
+
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration, color = log(areaconcentration/countconcentration))) +
+  geom_smooth(color = "black") + 
+  geom_point() + 
+  scale_color_viridis_c() +
+  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
+  scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000))  +
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")"))+ 
+  coord_fixed()
+
+
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration, color = log(areaconcentration/countconcentration))) +
+  geom_smooth(color = "black") + 
+  geom_point() + 
+  scale_color_viridis_c() +
+  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
+  scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ 
+  coord_fixed()
+
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration/countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
+
+#Adjust the concentrations for the area per particle to all be set to the mean. 
+hist(log10(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration))
+mean(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration)
+
+correctedcount <- as.vector(totalConcentrationDischarge$countconcentration/(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration)/mean(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration))
+
+ggplot() + geom_point(aes(x = totalConcentrationDischarge$chan_discharge_m, y = correctedcount)) + geom_smooth(aes(x = totalConcentrationDischarge$chan_discharge_m, y = correctedcount), color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
+
+ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = countconcentration)) +
+  geom_smooth(method = "lm", color = "black") + 
+  geom_point() + 
+  scale_color_viridis_c() +
+  scale_x_log10() + 
+  scale_y_log10()  +
+  theme_gray(base_size = 18)
 
 #Hysteresis behavior
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration))  + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + coord_fixed()# + geom_text(aes(x = chan_discharge, y = areaconcentration,label = SampleName))
@@ -337,7 +380,7 @@ mass_concentration_model$coefficients[2]
 
 predict(mass_concentration_model, c(10, 100))
 
-ggplot(MassConcentration, aes(x = chan_discharge_m, y = massconc)) + scale_color_viridis_d() + geom_path(aes(color = Date), size = 2) + geom_point() + scale_x_log10() + scale_y_log10() + theme_gray() + labs(x = "Discharge (cms)", y = "Mass Concentration (g/m^3)")#+ geom_text(aes(label = SampleName))
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + scale_color_viridis_d() + geom_point() + scale_x_log10() + scale_y_log10() + theme_gray() + labs(x = "Discharge (cms)", y = "Mass Concentration (g/m^3)")
 
 #Estimate Flux ----
 
@@ -355,11 +398,29 @@ max_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrat
 
 #10^BootMean(log10(totalConcentrationDischarge$massconcentration))
 
-#Flux estimate using regression
-discharge_regression_metric_tonnes <- sum(10^(log10(Flux$cubic_m_s)*coef(mass_concentration_model)[2] + coef(mass_concentration_model)[1]) * 15 * 60, na.rm = T)/10^6
-discharge_regression_metric_tonnes_min <- sum(10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[1] + mass_concentration_model_intercept_boot[1]) * 15 * 60, na.rm = T)/10^6
-discharge_regression_metric_tonnes_max <- sum(10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[3] + mass_concentration_model_intercept_boot[3]) * 15 * 60, na.rm = T)/10^6
+Flux$concentration_estimate <- 10^((log10(Flux$cubic_m_s)*
+                                       coef(mass_concentration_model)[2] + 
+                                       coef(mass_concentration_model)[1])) * 
+                                  10^(mean(mass_concentration_model$residuals^2)/2)
 
+Flux$concentration_estimate_lwr <- 10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[1] + 
+                                          mass_concentration_model_intercept_boot[1]) * 
+                                  10^(mean(mass_concentration_model$residuals^2)/2)
+
+Flux$concentration_estimate_upr <- 10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[3] + 
+                                         mass_concentration_model_intercept_boot[3]) *
+                                        10^(mean(mass_concentration_model$residuals^2)/2)
+
+Flux_uncertainty <- Flux %>%
+  mutate(uncertain_concentration = ifelse(concentration_estimate > max(totalConcentrationDischarge$massconcentration) | concentration_estimate < min(totalConcentrationDischarge$massconcentration), 0.1, 0)) %>% #Results in no correction because concentrations are within observed domain
+  mutate(uncertain_discharge = ifelse(cubic_m_s > max(measurements$discharge_va, na.rm = T) * 0.0283168 | cubic_m_s < min(measurements$discharge_va, na.rm = T) * 0.0283168, 0.1, 0)) %>%
+  mutate(lwr_uncertainty_ci_others = concentration_estimate_lwr - uncertain_discharge*concentration_estimate) %>%
+  mutate(upr_uncertainty_ci_others = concentration_estimate_upr + uncertain_discharge*concentration_estimate)
+
+#Flux estimate using regression
+discharge_regression_metric_tonnes <- sum(Flux_uncertainty$concentration_estimate * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
+discharge_regression_metric_tonnes_min <-  sum(Flux_uncertainty$lwr_uncertainty_ci_others * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
+discharge_regression_metric_tonnes_max <-  sum(Flux_uncertainty$upr_uncertainty_ci_others * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
 
 runoff_event_ranges = tibble(
   start = c("2018-10-04 02:15:00", 
@@ -429,11 +490,9 @@ baseflow_flux_max <- sum(baseflow_dates$cubic_m_s * (BootMean(totalConcentration
 
 runoff_baseflow_flux_max = runoff_flux_max+ baseflow_flux_max
 
-
 #Runoff flow
 sum(runoff_dates$cubic_m_s * 15 * 60) 
 sum(baseflow_dates$cubic_m_s * 15 * 60, na.rm = T)
-
 
 figure_table <- tibble(
   annual_flux_tonnes = c(runoff_baseflow_flux, constant_mean_metric_tonnes, discharge_regression_metric_tonnes),
@@ -442,7 +501,12 @@ figure_table <- tibble(
   name               = c("runoff baseflow separation", "constant mean", "regression")
 )
 
-ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + geom_point() + geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + scale_x_log10(limits = c(0.01, 100)) + theme_gray() + labs(y = "", x = "Annual Flux (metric tonnes)")
+ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + 
+  geom_point() + 
+  geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + 
+  scale_x_log10(limits = c(0.01, 1000)) + 
+  theme_gray() + 
+  labs(y = "", x = "Annual Flux (metric tonnes)")
 
 #approximately 20 times more flux during runoff periods than dry periods. Suggests issues with current managment strategy.
 
