@@ -71,25 +71,22 @@ BootLM <- function(x,y) {
   return(models)
 }
 
-
-#Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
-#precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
-
-#GageFieldMeasurements <- read.csv("G:/My Drive/GrayLab/Projects/Plastics/Articles Publish/Active/Stream Modeling/Riverside/GageData.csv")
+#Data ----
+#Sample data
 sampledata <- read.csv("Data/SampleMetaData.csv")
-param_cd <- read.csv("Data/param_cd.csv")
 #Particles that do not float.
 NoFloat <- read.csv("Data/MasterNoFloat_Clean.csv")
+#Continuous discharge
 Q <- read.csv("Data/SiteQ11066460.csv")
-measurements <- read.csv("Data/measurements.csv")
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
-
+#Stage discharge relationships.
+measurements <- read.csv("Data/measurements.csv") %>%
+  mutate(Date = as.Date(measurement_dt)) %>%
+  filter(Date > as.Date("2018-01-01")) #this is better because more current. 
+#need to correct the gage_height_va
 RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
-ggplot() + geom_line(data = RatingCurve, aes(x = INDEP, y = DEP)) + geom_point(data = measurements, aes(x = gage_height_va, y = chan_discharge, color = gage_va_change)) + geom_smooth(data = measurements, aes(x = gage_height_va, y = chan_discharge)) + scale_y_log10() + scale_x_log10()
 
+ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_line(data = RatingCurve, aes(x = INDEP+SHIFT, y = DEP) )+ geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 #Particles with sinking removed.
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data/Santa Ana River SamplesNoFloatRemoved")
 csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
 
 filelistcsv_1 <- csvfiles_1 %>%
@@ -97,64 +94,24 @@ filelistcsv_1 <- csvfiles_1 %>%
 
 csvfiles <- csvfiles_1
 filelistcsv <- filelistcsv_1
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
-PlasticMeasurements <- read_excel("Data/Riverside/SantaAna.xlsx", sheet = "PlasticMeasurements")
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/RouseProfilePaper/Data/Processed Data/DataForPublication")
-#WSData <- read_excel("Data/Data_WaldschlaegerEdited.xlsx")
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/ParticleSizeConversionData/Plastic Masses")
+
+#Plastic Masses
 Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv")
 Mast <- Master[complete.cases(Master$Mass),]
 massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
 massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
-
 ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
-#Do a test to make sure that 17 particles were removed.
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelam3 stionships/Data/Processed Data/Lab/Santa Ana River Samples")
-csvfiles_2 <- list.files("Data/Lab/Macroplastic/Santa Ana River Samples",  pattern = ".csv", recursive = T, full.names = T)
-filelistcsv_2 <- csvfiles_2 %>%
-  lapply(fread)
 
-#strange, this is looking like more particles are in the updated data. Why? what did I do back then lol.
-#Took a look at 3:04 for settling particles, not sure where they are in the image that I have for them. 
-#Went through and cleaned the data on 7/12 to make sure it was all in line. Should have all settling particles removed now. not sure what happened before. 
-for(n in 1:length(csvfiles_1)){
-  print(csvfiles_1[n])
-  print(csvfiles_2[n])
-  print(nrow(filelistcsv_1[[n]]) - nrow(filelistcsv_2[[n]]))
-}
-
-nrow(rbindlist(filelistcsv_1, fill = T)) - nrow(rbindlist(filelistcsv_2, fill = T))
-
-#Don't run this code again, just useful for first grab.
-#sites <- c("11066460")
-#parameterCd <- "00065"
-#startDate <- "1988-01-01"
-#endDate <- "2020-01-01"
-
-#availabledata <- whatNWISdata(siteNumber = sites)
-#availabledata <- availabledata %>%
-#  mutate(parm_cd = as.numeric(parm_cd)) %>%
-#  left_join(param_cd)
-#ggplot(availabledata, aes(x = begin_date)) + geom_histogram()
-
-#Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
-
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
-#write.csv(Q, "SiteQ11066460.csv")
-
-#ratingdata <- readNWISrating(sites, "base")
-#measurements <- readNWISmeas(sites, expanded = T, tz = "America/Los_Angeles")
-#write.csv(measurements, "measurements.csv")
-
-velocitycurve <- gam(log10(chan_velocity) ~ log10(chan_discharge), data = measurements)
-widthcurve <- gam(log10(chan_width) ~ log10(chan_discharge), data = measurements)
-areacurve <- gam(log10(chan_area) ~ log10(chan_discharge), data = measurements)
+dischargecurve <- lm(log10(chan_discharge) ~ log10(gage_height_va), data = measurements)
+velocitycurve <- lm(log10(chan_velocity) ~ log10(gage_height_va), data = measurements)
+depthcurve <- lm(log10(chan_area/chan_width) ~ log10(gage_height_va), data = measurements)
+#areacurve <- gam(log10() ~ log10(gage_height_va), data = measurements)
 
 #Discharge figure ----
 Discharge <- Q %>%
+  mutate
   mutate(dateTime = as.POSIXct(strptime(dateTime, format = "%Y-%m-%d %H:%M:%S"), tz = "America/Los_Angeles")) %>%
-  rename(INDEP = X_00065_00000) %>%
-  left_join(RatingCurve)
+  mutate(DEP = 10^(log10(X_00065_00000)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]))
 
 ggplot(Discharge)+ 
   geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1) + 
@@ -163,26 +120,6 @@ ggplot(Discharge)+
   scale_y_log10(breaks = c(0.1,1,10,100,1000), limits = c(0.1, 1000)) + 
   theme_gray()
 
-#precip is in mm, not sure what date time format is. https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf also probably want to look into the timestep, they are not all 1 hr. It seems like they all relate to the previous hour though so that may be helpful for extracting more granular data from this. May need to average everything within the hour period. 
-#Not sure I still need this. not discussing lag time or anything like that. 
-#precip2 <- precip %>%
-#  dplyr::select(DATE, AA1) %>%
-#  filter(grepl("01,", AA1)) %>%
-#  mutate(DATE = as.POSIXct(strptime(DATE, format = "%Y-%m-%dT%H:%M:%S"), tz = "America/Los_Angeles")) %>%
-#  filter(AA1 != "01,0000,9,5")
-  
-#for(row in 1:nrow(precip2)) {
-#  precip2[row, "precip_mm"] <- strsplit(precip2[row, "AA1"], ",")[[1]][2]
-#  precip2[row, "quality_code"] <- strsplit(precip2[row, "AA1"], ",")[[1]][4]
-#  precip2[row, "condition_code"] <- strsplit(precip2[row, "AA1"], ",")[[1]][3]
-#}
-
-#precip2$precip_mm <- as.numeric(precip2$precip_mm)
-#precip2 <- filter(precip2, precip_mm >  0)
-#ggplot(precip2, aes(x = DATE, y = precip_mm)) + geom_point() + theme_classic()
-#summary(precip2)
-
-#Get particle size info for samples
 
 #Compare size classes float and nofloat ----
 datamerge <- data.frame(ParticleID = numeric(), Area = numeric(), SampleName = character(), stringsAsFactors = F)
@@ -532,3 +469,26 @@ ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) +
 
 #Only 7 % of the time are we in these runoff periods, but they account for 10X of the flux. 
 nrow(runoff_dates)/nrow(Flux)
+
+#USGS Data pull ----
+#Don't run this code again, just useful for first grab.
+#param_cd <- read.csv("Data/param_cd.csv")
+#sites <- c("11066460")
+#parameterCd <- "00065"
+#startDate <- "1988-01-01"
+#endDate <- "2020-01-01"
+
+#availabledata <- whatNWISdata(siteNumber = sites)
+#availabledata <- availabledata %>%
+#  mutate(parm_cd = as.numeric(parm_cd)) %>%
+#  left_join(param_cd)
+#ggplot(availabledata, aes(x = begin_date)) + geom_histogram()
+
+#Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
+
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
+#write.csv(Q, "SiteQ11066460.csv")
+
+#ratingdata <- readNWISrating(sites, "base")
+#measurements <- readNWISmeas(sites, expanded = T, tz = "America/Los_Angeles")
+#write.csv(measurements, "measurements.csv")
