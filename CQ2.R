@@ -97,11 +97,15 @@ filelistcsv <- filelistcsv_1
 
 #Plastic Masses
 Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv")
-Mast <- Master[complete.cases(Master$Mass),]
-massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
-massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
+
+Mast <- Master[complete.cases(Master$Mass),] %>%
+  filter(Area > 25)
+
+massmodel <- lm(log10(Mass) ~ log10(Area), data = Mast)
+#massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
 ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
 
+#Flow models ----
 dischargecurve <- lm(log10(chan_discharge) ~ log10(gage_height_va), data = measurements)
 velocitycurve <- lm(log10(chan_velocity) ~ log10(gage_height_va), data = measurements)
 depthcurve <- lm(log10(chan_area/chan_width) ~ log10(gage_height_va), data = measurements)
@@ -109,9 +113,8 @@ depthcurve <- lm(log10(chan_area/chan_width) ~ log10(gage_height_va), data = mea
 
 #Discharge figure ----
 Discharge <- Q %>%
-  mutate
   mutate(dateTime = as.POSIXct(strptime(dateTime, format = "%Y-%m-%d %H:%M:%S"), tz = "America/Los_Angeles")) %>%
-  mutate(DEP = 10^(log10(X_00065_00000)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]))
+  mutate(DEP = 10^(log10(X_00065_00000)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]) * 10^(mean(dischargecurve$residuals^2)/2))
 
 ggplot(Discharge)+ 
   geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1) + 
@@ -142,7 +145,7 @@ RemoveThese <- c("Santa Ana 2 2 5 35pm 1 min bomb 24.67",
                  "Santa Ana 1-17-19 3:04pm 10 min 2/2", 
                  "Santa Ana 1-17-19 3:04pm 10 min 2/3", 
                  "Santa Ana 1-17-19 3:04pm 10 min 2/4", 
-                 "Santa Ana Right Bank 2/2 1:45 10 min")
+                 "Santa Ana Right Bank 2/2 1:45 10 min") #Samples with notes not to use.
 
 MasterListCompare <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
@@ -161,7 +164,7 @@ sizecompare <- MasterListCompare %>%
           dplyr::select(Area, class))
 
 ggplot(sizecompare, aes(x = sqrt(Area), y = class)) + geom_violin() + geom_boxplot(width=.2, notch = T) + scale_x_log10(limits = c(1, 1000), breaks = c(1, 10,100,1000)) + theme_gray()
-
+#Double checked this, these are only for samples which are included in this study for concentration discharge relationships. 
 sizecompare %>%
   dplyr::group_by(class) %>%
   dplyr::summarise(count = n())
@@ -169,65 +172,52 @@ sizecompare %>%
 #Clean concentration data ----
 MasterList <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
-  dplyr::filter(Area > 25) %>%
-  mutate(Volume = Area * sqrt(Area)) %>% #Volume is in mm3
-  mutate(Mass = Volume * 0.03 * 0.001) #Come back to density to see if it should be 0.03 g/ml
+  dplyr::filter(Area > 25) 
 
 sampledataclean_pre <- sampledata %>%
   mutate_if(is.factor, as.character) %>%
   mutate(dateTime = as.POSIXct(strptime(paste(Date, Start.Time, sep = " "), format = "%m/%d/%Y %H:%M"), tz = "America/Los_Angeles")) %>%
   rename(SampleName = Sample.ID) %>%
-  mutate(chan_discharge = approx(Discharge$dateTime, Discharge$DEP, xout = dateTime, rule = 2, method = "linear", ties=mean)[[2]]) %>%
+  mutate(gage_height = approx(Discharge$dateTime, Discharge$X_00065_00000, xout = dateTime, rule = 2, method = "linear", ties=mean)[[2]]) %>%
+  mutate(chan_discharge = 10^(log10(gage_height)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]) * 10^(mean(dischargecurve$residuals^2)/2)) %>%
+  mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
   right_join(MasterList) 
 
 sampledataclean_pre %>%
-  dplyr::select(chan_discharge, SampleName, dateTime) %>%
+  dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
-  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge * 0.0283168, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-02-02 01:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-02-03 12:00:00", tz="America/Los_Angeles"))) + ylim(0,300) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
+  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge_m, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-02-02 01:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-02-03 12:00:00", tz="America/Los_Angeles"))) + ylim(0,300) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
 
 sampledataclean_pre %>%
-  dplyr::select(chan_discharge, SampleName, dateTime) %>%
+  dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
-  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge * 0.0283168, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-01-17 01:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-01-18 12:00:00", tz="America/Los_Angeles"))) + ylim(0,300) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
+  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge_m, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-01-17 01:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-01-18 12:00:00", tz="America/Los_Angeles"))) + ylim(0,1000) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
 
 sampledataclean_pre %>%
-  dplyr::select(chan_discharge, SampleName, dateTime) %>%
+  dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
-  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge * 0.0283168, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-02-13 12:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-02-14 01:00:00", tz="America/Los_Angeles"))) + ylim(0,10) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
+  ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge_m, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-02-13 12:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-02-14 01:00:00", tz="America/Los_Angeles"))) + ylim(0,10) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
 
 #But don't these require the log10 of chan_discharge? Not sure these are working right. 
-sampledataclean_pre$chan_velocity <- 10^predict.gam(velocitycurve, sampledataclean_pre, type = "response")
-sampledataclean_pre$chan_area <- 10^predict.gam(areacurve, sampledataclean_pre, type = "response")
-sampledataclean_pre$chan_width <- 10^predict.gam(widthcurve, sampledataclean_pre, type = "response")
+sampledataclean_pre$chan_velocity <- 10^(log10(sampledataclean_pre$gage_height)*velocitycurve$coefficients[2] + velocitycurve$coefficients[1]) * 10^(mean(velocitycurve$residuals^2)/2)
+sampledataclean_pre$chan_depth <- 10^(log10(sampledataclean_pre$gage_height)*depthcurve$coefficients[2] + depthcurve$coefficients[1]) * 10^(mean(depthcurve$residuals^2)/2)
+sampledataclean_pre$particlemass <- 10^(log10(sampledataclean_pre$Area)*massmodel$coefficients[2] + massmodel$coefficients[1]) * 10^(mean(massmodel$residuals^2)/2)
 
 RunoffSamples <- c("Santa Ana 2-2-19 3 32pm 10 mins 2 2 181.63g HH", "Santa Ana 2 2 3 51pm 10min", "Santa Ana 2-2-19 4 29pm 2 mins 277.2g HH", "Santa Ana 2 2 54 seconds 5 03 720.25 grams", "Santa Ana 1-17-19 7 26 3 min HH", "Santa Ana 1-17-19 6 30pm 1 min 27 sec ST HH", "Santa Ana 1-17-19 5 00pm 30 sec ST", "Santa Ana 1-17-19 4 29pm 2 min 2 2" )
 
 sampledataclean <- sampledataclean_pre %>%
-  mutate(chan_depth = chan_area/chan_width* 0.3048) %>% #in meters
-  mutate(SampleSize = ifelse(chan_depth < 0.4, chan_depth * 0.4 * chan_velocity * 0.3048 * Duration..min.*60, 0.5*0.4* chan_velocity * 0.3048 * Duration..min.*60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
-  mutate(particlespersecond = 1 /(Duration..min. *60)) %>%
+  mutate(chan_depth_m = chan_depth* 0.3048) %>% #in meters
+  mutate(chan_velocity_m = chan_velocity* 0.3048) %>% #in meters
+  mutate(SampleSize = ifelse(chan_depth_m < 0.4, chan_depth_m * 0.4 * chan_velocity_m * Duration..min. * 60, 0.5 * 0.4 * chan_velocity_m * Duration..min. * 60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(particlespersecond = 1 /(Duration..min. * 60)) %>%
   mutate(concentration = 1/SampleSize) %>%
-  mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
-  mutate(shear_velocity = sqrt(9.8*0.003954717*chan_depth)) %>% #in meters
-  mutate(proportion_sampled = ifelse(chan_depth < 0.4,1 , 0.4/chan_depth)) %>%
-  mutate(Runoff = ifelse(SampleName %in% RunoffSamples, "Runoff", "Nonrunoff")) %>%
-  mutate(particlemass = 10^predict.gam(massmodel, ., type = "response")) #Doesn't this require the log10 of Area?
+  mutate(shear_velocity = sqrt(9.8*0.003954717*chan_depth_m)) %>% #in meters
+  mutate(proportion_sampled = ifelse(chan_depth_m < 0.4,1 , 0.4/chan_depth_m)) %>%
+  mutate(Runoff = ifelse(SampleName %in% RunoffSamples, "Runoff", "Nonrunoff"))
 
-#Just a qaqc proceedure for making sure we got rid of all the settling particles again. 
-sampledatacleannofloat <- NoFloat %>%
-  inner_join(sampledataclean, by = "SampleName") %>%
-  mutate(AreaDiff = Area.x - Area.y) %>%
-  dplyr::filter(Area.x > 25) %>%
-  group_by(Area.x) %>%
-  dplyr::filter(abs(AreaDiff) == min(abs(AreaDiff))) %>%
-  ungroup()#Shows12 that all other particles are not the same size. 
 
-#sampledataclean$particlemass <- 10^predict.gam(massmodel, sampledataclean, type = "response")
-
-#Fluxbyparticlesize showing discharge variation
-
-#Measured Rising Velocities ----
-#in meters
+#Possible Rouse Numbers Measured Rising Velocities ----
+#in meters per second
 velocities_macorplastic <- c(13.59, 8.60, 16.19, 15.87, 4.21, 5.56, 9.55, 2.99, 6.56, 2.21, 4.08, 4.93, 6.11) / 10
 mean(velocities_macorplastic)
 median(velocities_macorplastic)
@@ -239,7 +229,6 @@ RouseNumbers <- expand.grid(rising_vel_m_s = velocities_macorplastic, shear_vel_
 
 hist(RouseNumbers$RouseNum)
 quantile(RouseNumbers$RouseNum, seq(0,1, by = 0.01))
-ecdf(RouseNumbers$RouseNum)
 
 #Particle size comparison runoff-baseflow ----
 ggplot(sampledataclean, aes(sqrt(Area), color = Runoff)) + stat_ecdf(size = 3) + scale_color_viridis_d() + scale_x_log10(breaks = c(1, 10, 100, 1000), labels = c(1, 10, 100, 1000), limits = c(1,1000)) + theme_gray() 
@@ -250,9 +239,6 @@ nonrunofffit <- filter(sampledataclean, Runoff == "Nonrunoff")
 #null hypothesis is that they are drawn from the same distribution. 
 ks.test(runofffit$Area, nonrunofffit$Area, alternative = "two.sided")
 #This demonstrates that pdfs are the same
-
-#Not really enough particles in many of these sample days to say much, what does 10 particles really tell us about the particle size distribution?
-#ggplot(sampledataclean, aes(sqrt(Area), color = Runoff)) + geom_density(size = 3) + scale_color_viridis_d() + scale_x_log10(breaks = c(1, 10, 100, 1000), labels = c(1, 10, 100, 1000), limits = c(1,1000)) + theme_gray() + facet_wrap(.~Date, nrow = 5)
 
 sampledataclean %>%
   group_by(Runoff, SampleName) %>%
@@ -276,23 +262,24 @@ totalConcentrationDischarge <- sampledataclean %>%
   mutate(measured_mass = Mass..g./SampleSize*proportion_sampled) %>%
   arrange(desc(dateTime))
 
-#ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = areaconcentrationadj)) + geom_abline() + geom_point() + scale_y_log10() + scale_x_log10()
+#compare the measured mass of some samples to the particle prediction proceedure. 
 ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point() + scale_y_log10() + scale_x_log10() + geom_abline(intercept = 0, slope = 1)
 
+#Concentration discharge relationships ----
 #Linear Relatoinship, concentration - discharge
 
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration, color = log(areaconcentration/countconcentration))) +
-  geom_smooth(color = "black") + 
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) +
+  geom_smooth(method = "lm", color = "black") + 
   geom_point() + 
   scale_color_viridis_c() +
-  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
-  scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000))  +
+  scale_x_log10() + 
+  scale_y_log10()  +
   theme_gray(base_size = 18) + 
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")"))+ 
   coord_fixed()
 
 
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration, color = log(areaconcentration/countconcentration))) +
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
   geom_smooth(color = "black") + 
   geom_point() + 
   scale_color_viridis_c() +
@@ -304,14 +291,7 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentra
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration/countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
 
-#Adjust the concentrations for the area per particle to all be set to the mean. 
-hist(log10(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration))
-mean(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration)
-
-correctedcount <- as.vector(totalConcentrationDischarge$countconcentration/(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration)/mean(totalConcentrationDischarge$areaconcentration/totalConcentrationDischarge$countconcentration))
-
-ggplot() + geom_point(aes(x = totalConcentrationDischarge$chan_discharge_m, y = correctedcount)) + geom_smooth(aes(x = totalConcentrationDischarge$chan_discharge_m, y = correctedcount), color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
-
+#Fit area to count concentrations.
 ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = countconcentration)) +
   geom_smooth(method = "lm", color = "black") + 
   geom_point() + 
