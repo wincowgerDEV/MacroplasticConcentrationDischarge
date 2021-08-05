@@ -55,9 +55,26 @@ BootIntercept <- function(x, y) {
   return(quantile(mean, c(0.025, 0.5, 0.975), na.rm = T))
 }
 
+
+BootLM <- function(x,y) {
+  B <- 10000
+  models <- data.frame(intercept = numeric(B), slope = numeric(B))
+  n = length(x)
+  
+  set.seed(34345)
+  for (i in 1:B) {
+    boot <- sample(1:n, size=n, replace = TRUE)
+    model <- lm(y[boot] ~ x[boot])
+    models[i, "intercept"] <- model$coefficients[1]
+    models[i, "slope"] <- model$coefficients[2]
+  }
+  return(models)
+}
+
+
 #Precip data https://www.ncei.noaa.gov/data/global-hourly/doc/isd-format-document.pdf
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
-precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
+#precip <- read.csv("Data/72286903171Precip.csv", stringsAsFactors = F)
 
 #GageFieldMeasurements <- read.csv("G:/My Drive/GrayLab/Projects/Plastics/Articles Publish/Active/Stream Modeling/Riverside/GageData.csv")
 sampledata <- read.csv("Data/SampleMetaData.csv")
@@ -69,7 +86,7 @@ measurements <- read.csv("Data/measurements.csv")
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Processed Data/Riverside")
 
 RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
-ggplot() + geom_line(data = RatingCurve, aes(x = INDEP, y = DEP)) + geom_point(data = measurements, aes(x = gage_height_va, y = chan_discharge, color = gage_va_change))
+ggplot() + geom_line(data = RatingCurve, aes(x = INDEP, y = DEP)) + geom_point(data = measurements, aes(x = gage_height_va, y = chan_discharge, color = gage_va_change)) + geom_smooth(data = measurements, aes(x = gage_height_va, y = chan_discharge)) + scale_y_log10() + scale_x_log10()
 
 #Particles with sinking removed.
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data/Santa Ana River SamplesNoFloatRemoved")
@@ -88,6 +105,7 @@ PlasticMeasurements <- read_excel("Data/Riverside/SantaAna.xlsx", sheet = "Plast
 Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv")
 Mast <- Master[complete.cases(Master$Mass),]
 massmodel <- gam(log10(Mass) ~ log10(Area), data = Mast)
+massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
 
 ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
 #Do a test to make sure that 17 particles were removed.
@@ -240,6 +258,7 @@ sampledataclean_pre %>%
   distinct() %>%
   ggplot() + geom_line(data = Discharge, aes(y = DEP * 0.0283168, x = dateTime), size = 1)+ geom_point(aes(y = chan_discharge * 0.0283168, x = dateTime), color = "red", size = 3, shape = 23, fill = "red") + scale_x_datetime(limits = c(as.POSIXct("2019-02-13 12:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-02-14 01:00:00", tz="America/Los_Angeles"))) + ylim(0,10) + labs(y = "Discharge (cms)", x = "Date Time") + theme_gray()
 
+#But don't these require the log10 of chan_discharge? Not sure these are working right. 
 sampledataclean_pre$chan_velocity <- 10^predict.gam(velocitycurve, sampledataclean_pre, type = "response")
 sampledataclean_pre$chan_area <- 10^predict.gam(areacurve, sampledataclean_pre, type = "response")
 sampledataclean_pre$chan_width <- 10^predict.gam(widthcurve, sampledataclean_pre, type = "response")
@@ -255,7 +274,7 @@ sampledataclean <- sampledataclean_pre %>%
   mutate(shear_velocity = sqrt(9.8*0.003954717*chan_depth)) %>% #in meters
   mutate(proportion_sampled = ifelse(chan_depth < 0.4,1 , 0.4/chan_depth)) %>%
   mutate(Runoff = ifelse(SampleName %in% RunoffSamples, "Runoff", "Nonrunoff")) %>%
-  mutate(particlemass = 10^predict.gam(massmodel, ., type = "response"))
+  mutate(particlemass = 10^predict.gam(massmodel, ., type = "response")) #Doesn't this require the log10 of Area?
 
 #Just a qaqc proceedure for making sure we got rid of all the settling particles again. 
 sampledatacleannofloat <- NoFloat %>%
@@ -373,6 +392,7 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
 mass_concentration_model <- lm(log10(totalConcentrationDischarge$massconcentration) ~ log10(totalConcentrationDischarge$chan_discharge_m))
 mass_concentration_model_slope_boot <- BootSlope(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
 mass_concentration_model_intercept_boot <- BootIntercept(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
+area_concentration_model_boot <- BootLM(x = log10(totalConcentrationDischarge$chan_discharge_m), y = log10(totalConcentrationDischarge$areaconcentration))
 
 summary(mass_concentration_model)
 
