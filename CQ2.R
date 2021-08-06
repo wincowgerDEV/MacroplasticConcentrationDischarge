@@ -71,6 +71,21 @@ BootLM <- function(x,y) {
   return(models)
 }
 
+PredictQuantileBootLM <- function(x,bootdf,minormax) {
+  values = numeric(length = length(x))
+  for(i in 1:length(x)){
+      if(minormax == "min"){
+        values[i] <- quantile(x[i]*bootdf$slope + bootdf$intercept, c(0.025))
+      }
+      else{
+        values[i] <-  quantile(x[i]*bootdf$slope + bootdf$intercept, c(0.975))
+      }
+  }
+  return(values)
+}
+
+#PredictQuantileBootLM_vector <- Vectorize(PredictQuantileBootLM)
+
 #Data ----
 #Sample data
 sampledata <- read.csv("Data/SampleMetaData.csv")
@@ -81,7 +96,10 @@ Q <- read.csv("Data/SiteQ11066460.csv")
 #Stage discharge relationships.
 measurements <- read.csv("Data/measurements.csv") %>%
   mutate(Date = as.Date(measurement_dt)) %>%
-  filter(Date > as.Date("2018-01-01")) #this is better because more current. 
+  filter(Date > as.Date("2018-01-01")) %>%#this is better because more current.
+  mutate(chan_depth_m = chan_area/chan_width * 0.3048) %>%
+  mutate(chan_velocity_m = chan_velocity * 0.3048) %>%
+  mutate(chan_discharge_m = chan_discharge * 0.0283168)
 #need to correct the gage_height_va
 RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
 
@@ -102,13 +120,21 @@ Mast <- Master[complete.cases(Master$Mass),] %>%
   filter(Area > 25)
 
 massmodel <- lm(log10(Mass) ~ log10(Area), data = Mast)
+massmodelcurverange <- BootLM(y = log10(Mast$Mass), x = log10(Mast$Area))
+
 #massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
 ggplot(Mast, aes(y = log10(Mass), x =  log10(Area))) + geom_point() + geom_smooth(method = "lm")
 
 #Flow models ----
 dischargecurve <- lm(log10(chan_discharge) ~ log10(gage_height_va), data = measurements)
+dischargecurverange <- BootLM(y = log10(measurements$chan_discharge), x = log10(measurements$gage_height_va))
+
 velocitycurve <- lm(log10(chan_velocity) ~ log10(gage_height_va), data = measurements)
+velocitycurverange <- BootLM(y = log10(measurements$chan_velocity), x = log10(measurements$gage_height_va))
+
 depthcurve <- lm(log10(chan_area/chan_width) ~ log10(gage_height_va), data = measurements)
+depthcurverange <- BootLM(y = log10(measurements$chan_area/measurements$chan_width), x = log10(measurements$gage_height_va))
+
 #areacurve <- gam(log10() ~ log10(gage_height_va), data = measurements)
 
 #Discharge figure ----
@@ -149,9 +175,7 @@ RemoveThese <- c("Santa Ana 2 2 5 35pm 1 min bomb 24.67",
 
 MasterListCompare <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
-  dplyr::filter(Area > 1) %>%
-  mutate(Volume = Area * sqrt(Area)) %>% #Volume is in mm3
-  mutate(Mass = Volume * 0.03 * 0.001) #Come back to density to see if it should be 0.03 g/ml
+  dplyr::filter(Area > 1) 
 
 #Look at Particle Sizes, Double check that this has no settling in the buoyant class.
 sizecompare <- MasterListCompare %>%
@@ -174,13 +198,19 @@ MasterList <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
   dplyr::filter(Area > 25) 
 
+PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = dischargecurverange, minormax = "min")
+
 sampledataclean_pre <- sampledata %>%
   mutate_if(is.factor, as.character) %>%
   mutate(dateTime = as.POSIXct(strptime(paste(Date, Start.Time, sep = " "), format = "%m/%d/%Y %H:%M"), tz = "America/Los_Angeles")) %>%
   rename(SampleName = Sample.ID) %>%
   mutate(gage_height = approx(Discharge$dateTime, Discharge$X_00065_00000, xout = dateTime, rule = 2, method = "linear", ties=mean)[[2]]) %>%
   mutate(chan_discharge = 10^(log10(gage_height)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]) * 10^(mean(dischargecurve$residuals^2)/2)) %>%
+  mutate(chan_discharge_min = 10^(PredictQuantileBootLM(x = log10(gage_height), bootdf = dischargecurverange, minormax = "min")) * 10^(mean(dischargecurve$residuals^2)/2)) %>%
+  mutate(chan_discharge_max = 10^(PredictQuantileBootLM(x = log10(gage_height), bootdf = dischargecurverange, minormax = "max")) * 10^(mean(dischargecurve$residuals^2)/2)) %>%
   mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
+  mutate(chan_discharge_m_min = chan_discharge_min * 0.0283168) %>%
+  mutate(chan_discharge_m_max = chan_discharge_max * 0.0283168) %>%
   right_join(MasterList) 
 
 sampledataclean_pre %>%
@@ -200,19 +230,41 @@ sampledataclean_pre %>%
 
 #But don't these require the log10 of chan_discharge? Not sure these are working right. 
 sampledataclean_pre$chan_velocity <- 10^(log10(sampledataclean_pre$gage_height)*velocitycurve$coefficients[2] + velocitycurve$coefficients[1]) * 10^(mean(velocitycurve$residuals^2)/2)
+sampledataclean_pre$chan_velocity_min <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = velocitycurverange, minormax = "min")) * 10^(mean(velocitycurve$residuals^2)/2)
+sampledataclean_pre$chan_velocity_max <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = velocitycurverange, minormax = "max")) * 10^(mean(velocitycurve$residuals^2)/2)
+
 sampledataclean_pre$chan_depth <- 10^(log10(sampledataclean_pre$gage_height)*depthcurve$coefficients[2] + depthcurve$coefficients[1]) * 10^(mean(depthcurve$residuals^2)/2)
+sampledataclean_pre$chan_depth_min <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = depthcurverange, minormax = "min")) * 10^(mean(depthcurve$residuals^2)/2)
+sampledataclean_pre$chan_depth_max <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = depthcurverange, minormax = "max")) * 10^(mean(depthcurve$residuals^2)/2)
+
 sampledataclean_pre$particlemass <- 10^(log10(sampledataclean_pre$Area)*massmodel$coefficients[2] + massmodel$coefficients[1]) * 10^(mean(massmodel$residuals^2)/2)
+sampledataclean_pre$particlemass_min <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$Area), bootdf = massmodelcurverange, minormax = "min")) * 10^(mean(massmodel$residuals^2)/2)
+sampledataclean_pre$particlemass_max <- 10^(PredictQuantileBootLM(x = log10(sampledataclean_pre$Area), bootdf = massmodelcurverange, minormax = "max")) * 10^(mean(massmodel$residuals^2)/2)
+
 
 RunoffSamples <- c("Santa Ana 2-2-19 3 32pm 10 mins 2 2 181.63g HH", "Santa Ana 2 2 3 51pm 10min", "Santa Ana 2-2-19 4 29pm 2 mins 277.2g HH", "Santa Ana 2 2 54 seconds 5 03 720.25 grams", "Santa Ana 1-17-19 7 26 3 min HH", "Santa Ana 1-17-19 6 30pm 1 min 27 sec ST HH", "Santa Ana 1-17-19 5 00pm 30 sec ST", "Santa Ana 1-17-19 4 29pm 2 min 2 2" )
 
 sampledataclean <- sampledataclean_pre %>%
   mutate(chan_depth_m = chan_depth* 0.3048) %>% #in meters
   mutate(chan_velocity_m = chan_velocity* 0.3048) %>% #in meters
-  mutate(SampleSize = ifelse(chan_depth_m < 0.4, chan_depth_m * 0.4 * chan_velocity_m * Duration..min. * 60, 0.5 * 0.4 * chan_velocity_m * Duration..min. * 60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(chan_depth_m_min = chan_depth_min* 0.3048) %>% #in meters
+  mutate(chan_velocity_m_min = chan_velocity_min* 0.3048) %>% #in meters
+  mutate(chan_depth_m_max = chan_depth_max* 0.3048) %>% #in meters
+  mutate(chan_velocity_m_max = chan_velocity_max* 0.3048) %>% #in meters
+  #mutate(Sampledepth = ifelse(chan_depth_m < 0.4, chan_depth_m , 0.5 * 0.4)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  #mutate(Sampledepth_min = ifelse(chan_depth_m_min < 0.4, chan_depth_m_min, 0.5 * 0.4)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  #mutate(Sampledepth_max = ifelse(chan_depth_m_max < 0.4, chan_depth_m_max, 0.5 * 0.4)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(SampleSize = 0.2 * 0.4 * chan_velocity_m * Duration..min. * 60) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(SampleSize_min = 0.2 * 0.4 * chan_velocity_m_min * Duration..min. * 60) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  mutate(SampleSize_max = 0.2 * 0.4 * chan_velocity_m_max * Duration..min. * 60) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  #mutate(SampleSize_min = ifelse(chan_depth_m_min < 0.4, chan_depth_m_min * 0.4 * chan_velocity_m_min * Duration..min. * 60, 0.5 * 0.4 * chan_velocity_m_min * Duration..min. * 60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
+  #mutate(SampleSize_max = ifelse(chan_depth_max < 0.4, chan_depth_m_max * 0.4 * chan_velocity_m_max * Duration..min. * 60, 0.5 * 0.4 * chan_velocity_m_max * Duration..min. * 60)) %>% #in cubic meters, assumes sample net is 1/3rd submerged when not sitting on bottom. 
   mutate(particlespersecond = 1 /(Duration..min. * 60)) %>%
   mutate(concentration = 1/SampleSize) %>%
   mutate(shear_velocity = sqrt(9.8*0.003954717*chan_depth_m)) %>% #in meters
-  mutate(proportion_sampled = ifelse(chan_depth_m < 0.4,1 , 0.4/chan_depth_m)) %>%
+  mutate(proportion_sampled = 0.2/chan_depth_m) %>%
+  mutate(proportion_sampled_max = 0.2/chan_depth_m_min) %>%#Half submerged.
+  mutate(proportion_sampled_min = 0.2/chan_depth_m_max) %>%
   mutate(Runoff = ifelse(SampleName %in% RunoffSamples, "Runoff", "Nonrunoff"))
 
 
@@ -254,11 +306,17 @@ sampledataclean %>%
 
 #Corrected concentrations, depth integrated. 
 totalConcentrationDischarge <- sampledataclean %>%
-  group_by(SampleName, chan_discharge_m, Mass..g., proportion_sampled, SampleSize, dateTime, Duration..min., Date, chan_depth, shear_velocity, Runoff) %>%
-  dplyr::summarise(count = n(), sumarea = sum(Area), summass = sum(particlemass, na.rm = T), fiftyquantile = quantile(Area, 0.5), eightyfivequantile = quantile(Area, 0.85), fifteenquantile = quantile(Area, 0.15), minsize = min(Area), maxsize = max(Area)) %>%
+  group_by(SampleName, chan_discharge_m, chan_discharge_m_min, chan_discharge_m_max, SampleSize_min, SampleSize_max, proportion_sampled_min, proportion_sampled_max, Mass..g., proportion_sampled, SampleSize, dateTime, Duration..min., Date, chan_depth_m,chan_depth_m_min, chan_depth_m_max, chan_velocity_m_max,  chan_velocity_m_min, chan_velocity_m, shear_velocity, Runoff) %>%
+  dplyr::summarise(count = n(), sumarea = sum(Area), summass = sum(particlemass, na.rm = T), minsummass = sum(particlemass_min, na.rm = T), maxsummass = sum(particlemass_max, na.rm = T)) %>%
   mutate(countconcentration = count/SampleSize*proportion_sampled) %>%
+  mutate(countconcentration_min = count/SampleSize_max*proportion_sampled_min) %>%
+  mutate(countconcentration_max = count/SampleSize_min*proportion_sampled_max) %>%
   mutate(areaconcentration = sumarea/SampleSize*proportion_sampled) %>%
+  mutate(areaconcentration_min = sumarea/SampleSize_max*proportion_sampled_min) %>%
+  mutate(areaconcentration_max = sumarea/SampleSize_min*proportion_sampled_max) %>%
   mutate(massconcentration = summass/SampleSize*proportion_sampled) %>%
+  mutate(massconcentration_min = minsummass/SampleSize_max*proportion_sampled_min) %>%
+  mutate(massconcentration_max = maxsummass/SampleSize_min*proportion_sampled_max) %>%
   mutate(measured_mass = Mass..g./SampleSize*proportion_sampled) %>%
   arrange(desc(dateTime))
 
@@ -271,6 +329,9 @@ ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) +
   geom_smooth(method = "lm", color = "black") + 
   geom_point() + 
+  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  geom_linerange(aes(ymin = areaconcentration_min, ymax =areaconcentration_max)) + 
+  #geom_errorbarh(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
   scale_color_viridis_c() +
   scale_x_log10() + 
   scale_y_log10()  +
@@ -281,10 +342,12 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentrat
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
   geom_smooth(color = "black") + 
+  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) +
   geom_point() + 
   scale_color_viridis_c() +
-  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
-  scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + 
+  scale_x_log10() + 
+  scale_y_log10() + 
   theme_gray(base_size = 18) + 
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ 
   coord_fixed()
@@ -306,21 +369,9 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentra
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
 
-mass_concentration_model <- lm(log10(totalConcentrationDischarge$massconcentration) ~ log10(totalConcentrationDischarge$chan_discharge_m))
-mass_concentration_model_slope_boot <- BootSlope(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
-mass_concentration_model_intercept_boot <- BootIntercept(y = log10(totalConcentrationDischarge$massconcentration), x = log10(totalConcentrationDischarge$chan_discharge_m))
-area_concentration_model_boot <- BootLM(x = log10(totalConcentrationDischarge$chan_discharge_m), y = log10(totalConcentrationDischarge$areaconcentration))
 
-summary(mass_concentration_model)
-
-mass_concentration_model$coefficients[2]
-
-predict(mass_concentration_model, c(10, 100))
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + scale_color_viridis_d() + geom_point() + scale_x_log10() + scale_y_log10() + theme_gray() + labs(x = "Discharge (cms)", y = "Mass Concentration (g/m^3)")
-
+#May actually not do this after all. Should calculate uncertainties of concentrations and discharge above. 
 #Estimate Flux ----
-
 #Constant Mean
 Flux <- Discharge %>%
   filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles")) %>%
