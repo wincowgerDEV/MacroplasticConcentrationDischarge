@@ -468,25 +468,115 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
 
 #Estimate Flux ----
 #Constant Mean
+#* 0.0283168
 Flux <- Discharge %>%
-  filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles")) %>%
-  mutate(cubic_m_s = DEP * 0.0283168) 
+  filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles"))
+
+Flux$chan_discharge_m <- 10^(log10(Flux$X_00065_00000)*dischargecurve$coefficients[2] + dischargecurve$coefficients[1]) * 10^(mean(dischargecurve$residuals^2)/2)* 0.0283168
+Flux$chan_discharge_m_lwr <- 10^(PredictQuantileBootLM(x = log10(Flux$X_00065_00000), bootdf = dischargecurverange, minormax = "min")) * 10^(mean(dischargecurve$residuals^2)/2) * 0.0283168
+Flux$chan_discharge_m_upr <- 10^(PredictQuantileBootLM(x = log10(Flux$X_00065_00000), bootdf = dischargecurverange, minormax = "max")) * 10^(mean(dischargecurve$residuals^2)/2) * 0.0283168
 
 mean_concentration_bootstrap <- BootMean(totalConcentrationDischarge$massconcentration)
 
-constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * mean(totalConcentrationDischarge$massconcentration) * 15 * 60, na.rm = T)/10^6
-min_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrationDischarge$massconcentration)[1] * 15 * 60, na.rm = T)/10^6
-max_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrationDischarge$massconcentration)[3] * 15 * 60, na.rm = T)/10^6
+constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m * mean(totalConcentrationDischarge$massconcentration) * 15 * 60, na.rm = T)/10^6
+min_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_lwr  * BootMean(totalConcentrationDischarge$massconcentration)[1] * 15 * 60, na.rm = T)/10^6
+max_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_upr  * BootMean(totalConcentrationDischarge$massconcentration)[3] * 15 * 60, na.rm = T)/10^6
 
 
 #Flux estimate using regression
+#https://fromthebottomoftheheap.net/2016/12/15/simultaneous-interval-revisited/
+hist(log10(totalConcentrationDischarge$massconcentration))
+hist(log10(totalConcentrationDischarge$chan_discharge_m))
+shapiro.test(log10(totalConcentrationDischarge$chan_discharge_m))
+shapiro.test(log10(totalConcentrationDischarge$massconcentration))
+#Mass concentration is normally distributed but discharge is not. 
+
+totalConcentrationDischarge$chan_discharge_m_log10 <- log10(totalConcentrationDischarge$chan_discharge_m)
+totalConcentrationDischarge$chan_discharge_m_min_log10 <- log10(totalConcentrationDischarge$chan_discharge_m_min)
+totalConcentrationDischarge$chan_discharge_m_max_log10 <- log10(totalConcentrationDischarge$chan_discharge_m_max)
+
+totalConcentrationDischarge$massconcentration_log10 <- log10(totalConcentrationDischarge$massconcentration)
+
+
+mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10), data = totalConcentrationDischarge, method = "REML")
+summary.gam(mass.model)
+#plot(model)
+plot(mass.model, shade = TRUE, seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
+
+rmvn <- function(n, mu, sig) { ## MVN random deviates
+  L <- mroot(sig)
+  m <- ncol(L)
+  t(mu + L %*% matrix(rnorm(m*n), m, n))
+}
+
+Vb <- vcov(mass.model)
+newd <- with(totalConcentrationDischarge, data.frame(chan_discharge_m_log10 = seq(min(chan_discharge_m_log10), max(chan_discharge_m_log10), length = 200)))
+pred <- predict(mass.model, newd, se.fit = TRUE)
+se.fit <- pred$se.fit
+set.seed(42)
+N <- 10000
+BUdiff <- rmvn(N, mu = rep(0, nrow(Vb)), sig = Vb)
+Cg <- predict(mass.model, newd, type = "lpmatrix")
+simDev <- Cg %*% t(BUdiff)
+absDev <- abs(sweep(simDev, 1, se.fit, FUN = "/"))
+masd <- apply(absDev, 2L, max)
+crit <- quantile(masd, prob = 0.95, type = 8)
+pred <- transform(cbind(data.frame(pred), newd),
+                  uprP = fit + (2 * se.fit),
+                  lwrP = fit - (2 * se.fit),
+                  uprS = fit + (crit * se.fit),
+                  lwrS = fit - (crit * se.fit))
+ggplot(pred, aes(x = chan_discharge_m_log10)) +
+  geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
+  geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red")
+
+sims <- rmvn(N, mu = coef(mass.model), sig = Vb)
+fits <- Cg %*% t(sims)
+
+nrnd <- 30
+rnd <- sample(N, nrnd)
+stackFits <- stack(as.data.frame(fits[, rnd]))
+stackFits <- transform(stackFits, discharge = rep(newd$chan_discharge_m_log10, length(rnd)))
+
+ggplot(pred, aes(x = chan_discharge_m_log10, y = fit)) +
+  geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
+  geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red") +
+  geom_path(lwd = 2) +
+  geom_path(data = stackFits, mapping = aes(y = values, x = discharge, group = ind),
+            alpha = 0.4, colour = "grey20") +
+  labs(y = "Strontium isotope ratio",
+       x = "Age [Ma BP]",
+       title = "Point-wise & Simultaneous 95% confidence intervals for fitted GAM",
+       subtitle = sprintf("Each line is one of %i draws from the Bayesian posterior distribution of the model", nrnd))
+
+inCI <- function(x, upr, lwr) {
+  all(x >= lwr & x <= upr)
+}
+
+fitsInPCI <- apply(fits, 2L, inCI, upr = pred$uprP, lwr = pred$lwrP)
+fitsInSCI <- apply(fits, 2L, inCI, upr = pred$uprS, lwr = pred$lwrS)
+
+sum(fitsInPCI) / length(fitsInPCI)      # Point-wise
+sum(fitsInSCI) / length(fitsInSCI)      # Simultaneous
+#plot.gam(mass.model, seWithMean = T)
+
+
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
+  geom_line(data = Flux, aes(x = chan_discharge_m, y = concentration_estimate)) +
+  geom_point() + 
+  scale_color_viridis_d() + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")")) + 
+  coord_fixed()#+ geom_text(aes(label = SampleName))
 
 Flux$concentration_estimate <- 10^((log10(Flux$cubic_m_s)*
                                        coef(mass_concentration_model)[2] + 
                                        coef(mass_concentration_model)[1])) * 
                                   10^(mean(mass_concentration_model$residuals^2)/2)
 
-Flux$concentration_estimate_lwr <- 10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[1] + 
+Flux$concentration_estimate_lwr <- 10^(log10(Flux$cubic_m_s)* mass_concentration_model_slope_boot[1] + 
                                           mass_concentration_model_intercept_boot[1]) * 
                                   10^(mean(mass_concentration_model$residuals^2)/2)
 
@@ -499,7 +589,6 @@ Flux_uncertainty <- Flux %>%
   mutate(uncertain_discharge = ifelse(cubic_m_s > max(measurements$discharge_va, na.rm = T) * 0.0283168 | cubic_m_s < min(measurements$discharge_va, na.rm = T) * 0.0283168, 0.1, 0)) %>%
   mutate(lwr_uncertainty_ci_others = concentration_estimate_lwr - uncertain_discharge*concentration_estimate) %>%
   mutate(upr_uncertainty_ci_others = concentration_estimate_upr + uncertain_discharge*concentration_estimate)
-
 
 
 figure_table <- tibble(
