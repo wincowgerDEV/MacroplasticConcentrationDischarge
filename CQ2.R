@@ -468,7 +468,6 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
 
 #Estimate Flux ----
 #Constant Mean
-#* 0.0283168
 Flux <- Discharge %>%
   filter(dateTime > as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles") & dateTime < as.POSIXct("2019-09-30 23:59:00", tz="America/Los_Angeles"))
 
@@ -497,6 +496,9 @@ totalConcentrationDischarge$chan_discharge_m_max_log10 <- log10(totalConcentrati
 
 totalConcentrationDischarge$massconcentration_log10 <- log10(totalConcentrationDischarge$massconcentration)
 
+Flux$chan_discharge_m_log10 <- log10(Flux$chan_discharge_m)
+Flux$chan_discharge_m_min_log10 <- log10(Flux$chan_discharge_m_lwr)
+Flux$chan_discharge_m_max_log10 <- log10(Flux$chan_discharge_m_upr)
 
 mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10), data = totalConcentrationDischarge, method = "REML")
 summary.gam(mass.model)
@@ -530,35 +532,35 @@ ggplot(pred, aes(x = chan_discharge_m_log10)) +
   geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
   geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red")
 
-sims <- rmvn(N, mu = coef(mass.model), sig = Vb)
-fits <- Cg %*% t(sims)
+#add in mean concentrations and uncertainties if high or low
+flux_low = Flux$chan_discharge_m < min(totalConcentrationDischarge$chan_discharge_m)
+table(flux_high)
+flux_high = Flux$chan_discharge_m > max(totalConcentrationDischarge$chan_discharge_m)
 
-nrnd <- 30
-rnd <- sample(N, nrnd)
-stackFits <- stack(as.data.frame(fits[, rnd]))
-stackFits <- transform(stackFits, discharge = rep(newd$chan_discharge_m_log10, length(rnd)))
+mean_high_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[17:20])
+mean_low_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[1:4])
 
-ggplot(pred, aes(x = chan_discharge_m_log10, y = fit)) +
-  geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
-  geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red") +
-  geom_path(lwd = 2) +
-  geom_path(data = stackFits, mapping = aes(y = values, x = discharge, group = ind),
-            alpha = 0.4, colour = "grey20") +
-  labs(y = "Strontium isotope ratio",
-       x = "Age [Ma BP]",
-       title = "Point-wise & Simultaneous 95% confidence intervals for fitted GAM",
-       subtitle = sprintf("Each line is one of %i draws from the Bayesian posterior distribution of the model", nrnd))
+mean_high_flux_concentration <- mean(sort(totalConcentrationDischarge$massconcentration)[17:20])
+mean_low_flux_concentration <- mean(sort(totalConcentrationDischarge$massconcentration)[1:4])
 
-inCI <- function(x, upr, lwr) {
-  all(x >= lwr & x <= upr)
-}
+#center
+flux_pred <- predict(mass.model, Flux, se.fit = TRUE)
+flux_fit_concentration <- 10^(flux_pred$fit)* 10^(mean(mass.model$residuals^2)/2)
+flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* 15 * 60)/10^6
 
-fitsInPCI <- apply(fits, 2L, inCI, upr = pred$uprP, lwr = pred$lwrP)
-fitsInSCI <- apply(fits, 2L, inCI, upr = pred$uprS, lwr = pred$lwrS)
+#min
+flux_pred_min <- predict(mass.model, Flux %>%
+                           mutate(chan_discharge_m_log10 = chan_discharge_m_min_log10), se.fit = TRUE)
+flux_se.fit_min <- flux_pred_min$se.fit
+flux_fit_concentration_min <- 10^(flux_pred_min$fit - (crit*flux_se.fit_min))* 10^(mean(mass.model$residuals^2)/2)
+flux_fit_metric_tonnes_min <- sum(ifelse(flux_low, mean_low_flux_concentration_range[1], ifelse(flux_high, mean_high_flux_concentration_range[1], flux_fit_concentration_min))* 15 * 60)/10^6
 
-sum(fitsInPCI) / length(fitsInPCI)      # Point-wise
-sum(fitsInSCI) / length(fitsInSCI)      # Simultaneous
-#plot.gam(mass.model, seWithMean = T)
+#max
+flux_pred_max <- predict(mass.model, Flux %>%
+                           mutate(chan_discharge_m_log10 = chan_discharge_m_max_log10), se.fit = TRUE)
+flux_se.fit_max <- flux_pred_max$se.fit
+flux_fit_concentration_max <- 10^(flux_pred_max$fit + (crit*flux_se.fit_max))* 10^(mean(mass.model$residuals^2)/2)
+flux_fit_metric_tonnes_max <- sum(ifelse(flux_low, mean_low_flux_concentration_range[3], ifelse(flux_high, mean_high_flux_concentration_range[3], flux_fit_concentration_max))* 15 * 60)/10^6
 
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
@@ -571,31 +573,12 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")")) + 
   coord_fixed()#+ geom_text(aes(label = SampleName))
 
-Flux$concentration_estimate <- 10^((log10(Flux$cubic_m_s)*
-                                       coef(mass_concentration_model)[2] + 
-                                       coef(mass_concentration_model)[1])) * 
-                                  10^(mean(mass_concentration_model$residuals^2)/2)
-
-Flux$concentration_estimate_lwr <- 10^(log10(Flux$cubic_m_s)* mass_concentration_model_slope_boot[1] + 
-                                          mass_concentration_model_intercept_boot[1]) * 
-                                  10^(mean(mass_concentration_model$residuals^2)/2)
-
-Flux$concentration_estimate_upr <- 10^(log10(Flux$cubic_m_s)*mass_concentration_model_slope_boot[3] + 
-                                         mass_concentration_model_intercept_boot[3]) *
-                                        10^(mean(mass_concentration_model$residuals^2)/2)
-
-Flux_uncertainty <- Flux %>%
-  mutate(uncertain_concentration = ifelse(concentration_estimate > max(totalConcentrationDischarge$massconcentration) | concentration_estimate < min(totalConcentrationDischarge$massconcentration), 0.1, 0)) %>% #Results in no correction because concentrations are within observed domain
-  mutate(uncertain_discharge = ifelse(cubic_m_s > max(measurements$discharge_va, na.rm = T) * 0.0283168 | cubic_m_s < min(measurements$discharge_va, na.rm = T) * 0.0283168, 0.1, 0)) %>%
-  mutate(lwr_uncertainty_ci_others = concentration_estimate_lwr - uncertain_discharge*concentration_estimate) %>%
-  mutate(upr_uncertainty_ci_others = concentration_estimate_upr + uncertain_discharge*concentration_estimate)
-
 
 figure_table <- tibble(
-  annual_flux_tonnes = c(runoff_baseflow_flux, constant_mean_metric_tonnes, discharge_regression_metric_tonnes),
-  min_flux_tonnes    = c(runoff_baseflow_flux_min, min_constant_mean_metric_tonnes, discharge_regression_metric_tonnes_min),
-  max_flux_tonnes    = c(runoff_baseflow_flux_max, max_constant_mean_metric_tonnes, discharge_regression_metric_tonnes_max),
-  name               = c("runoff baseflow separation", "constant mean", "regression")
+  annual_flux_tonnes = c(flux_fit_metric_tonnes, constant_mean_metric_tonnes),
+  min_flux_tonnes    = c(flux_fit_metric_tonnes_min, min_constant_mean_metric_tonnes),
+  max_flux_tonnes    = c(flux_fit_metric_tonnes_max, max_constant_mean_metric_tonnes),
+  name               = c("Generalized Additive Model", "Constant Mean")
 )
 
 ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + 
@@ -604,11 +587,6 @@ ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) +
   scale_x_log10(limits = c(0.01, 1000)) + 
   theme_gray() + 
   labs(y = "", x = "Annual Flux (metric tonnes)")
-
-#approximately 20 times more flux during runoff periods than dry periods. Suggests issues with current managment strategy.
-
-#Only 7 % of the time are we in these runoff periods, but they account for 10X of the flux. 
-nrow(runoff_dates)/nrow(Flux)
 
 #USGS Data pull ----
 #Don't run this code again, just useful for first grab.
