@@ -126,7 +126,7 @@ RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve"
 
 ggplot(measurements, aes(x = gage_height_va, y = chan_depth_m)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 ggplot(measurements, aes(x = gage_height_va, y = chan_velocity_m)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
-ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_line(data = RatingCurve, aes(x = INDEP+SHIFT, y = DEP) )+ geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
+ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 #Particles with sinking removed.
 csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
 
@@ -340,30 +340,30 @@ totalConcentrationDischarge <- sampledataclean %>%
   group_by(SampleName, Sampledepth_min, Sampledepth_max, chan_discharge_m, chan_discharge_m_min, chan_discharge_m_max, SampleSize_min, SampleSize_max, proportion_sampled_min, proportion_sampled_max, Mass..g., proportion_sampled, SampleSize, dateTime, Duration..min., Date, chan_depth_m,chan_depth_m_min, chan_depth_m_max, chan_velocity_m_max,  chan_velocity_m_min, chan_velocity_m, shear_velocity, Runoff, min_rouse) %>%
   dplyr::summarise(count = n(), sumarea = sum(Area), summass = sum(particlemass, na.rm = T), minsummass = sum(particlemass_min, na.rm = T), maxsummass = sum(particlemass_max, na.rm = T)) %>%
   mutate(countconcentration = count/SampleSize*proportion_sampled) %>%
-  mutate(countconcentration_min = count/SampleSize_max*proportion_sampled_min) %>%
-  mutate(countconcentration_max = count/SampleSize_min*proportion_sampled_max) %>%
+  mutate(countconcentration_min = (count - count*0.1)/SampleSize_max*proportion_sampled_min) %>%
+  mutate(countconcentration_max = (count + count*0.1)/SampleSize_min*proportion_sampled_max) %>%
   mutate(areaconcentration = sumarea/SampleSize*proportion_sampled) %>%
-  mutate(areaconcentration_min = sumarea/SampleSize_max*proportion_sampled_min) %>%
-  mutate(areaconcentration_max = sumarea/SampleSize_min*proportion_sampled_max) %>%
+  mutate(areaconcentration_min = (sumarea - sumarea * 0.1)/SampleSize_max*proportion_sampled_min) %>%
+  mutate(areaconcentration_max = (sumarea + sumarea * 0.1)/SampleSize_min*proportion_sampled_max) %>%
   mutate(massconcentration = summass/SampleSize*proportion_sampled) %>%
-  mutate(massconcentration_min = minsummass/SampleSize_max*proportion_sampled_min) %>%
-  mutate(massconcentration_max = maxsummass/SampleSize_min*proportion_sampled_max) %>%
+  mutate(massconcentration_min = (minsummass - summass*0.1)/SampleSize_max*proportion_sampled_min) %>%
+  mutate(massconcentration_max = (maxsummass + summass*0.1)/SampleSize_min*proportion_sampled_max) %>%
   mutate(measured_mass = Mass..g./SampleSize*proportion_sampled) %>%
   arrange(desc(dateTime))
 
-trueconcentration <- numeric(nrow(totalConcentrationDischarge))
-for(n in 1:nrow(totalConcentrationDischarge)){
-  if(totalConcentrationDischarge$Sampledepth_min[n] >= totalConcentrationDischarge$chan_depth_m_max[n] | totalConcentrationDischarge$min_rouse[n] > 2.5){
-    trueconcentration[n] <- 1
-  }
-  else{
-      trueconcentration[n] <- RouseAverageSurfaceSample(Concentration = 1, RouseNumber = totalConcentrationDischarge$min_rouse[n], SampleDepth = totalConcentrationDischarge$Sampledepth_min[n], StreamDepth = totalConcentrationDischarge$chan_depth_m_max[n])/1
-  }
-}
+#trueconcentration <- numeric(nrow(totalConcentrationDischarge))
+#for(n in 1:nrow(totalConcentrationDischarge)){
+#  if(totalConcentrationDischarge$Sampledepth_min[n] >= totalConcentrationDischarge$chan_depth_m_max[n] | totalConcentrationDischarge$min_rouse[n] > 2.5){
+#    trueconcentration[n] <- 1
+#  }
+#  else{
+#      trueconcentration[n] <- RouseAverageSurfaceSample(Concentration = 1, RouseNumber = totalConcentrationDischarge$min_rouse[n], SampleDepth = totalConcentrationDischarge$Sampledepth_min[n], StreamDepth = totalConcentrationDischarge$chan_depth_m_max[n])/1
+#  }
+#}
 
-totalConcentrationDischarge_2 <- totalConcentrationDischarge %>%
-  bind_cols(concentration_multiple = trueconcentration) %>%
-  mutate(countconcentration_max_rouse = countconcentration_max * concentration_multiple)
+#totalConcentrationDischarge_2 <- totalConcentrationDischarge %>%
+#  bind_cols(concentration_multiple = trueconcentration) %>%
+#  mutate(countconcentration_max_rouse = countconcentration_max * concentration_multiple)
 
 #compare the measured mass of some samples to the particle prediction procedure. 
 ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point() + scale_y_log10() + scale_x_log10() + geom_abline(intercept = 0, slope = 1)
@@ -384,8 +384,11 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentrat
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")"))+ 
   coord_fixed()
 
+model <- gam(log10(countconcentration)~s(log10(chan_discharge_m)), data = totalConcentrationDischarge)
+summary.gam(model)
+plot(model)
 
-ggplot(totalConcentrationDischarge_2, aes(x = chan_discharge_m, y = countconcentration)) +
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
   geom_smooth(color = "black") + 
   geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
   geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) +
@@ -421,13 +424,48 @@ ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = countconcentr
   theme_gray(base_size = 18)
 
 #Hysteresis behavior
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration))  + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + coord_fixed()# + geom_text(aes(x = chan_discharge, y = areaconcentration,label = SampleName))
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + geom_path(aes(color = Date), size = 2) + geom_point() + scale_color_viridis_d() + scale_x_log10() + scale_y_log10() + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ coord_fixed()#+ geom_text(aes(label = SampleName))
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration))  + 
+  geom_path(aes(color = Date), size = 2) + 
+  geom_point() + 
+  scale_color_viridis_d() + 
+  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
+  scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000)) + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + 
+  coord_fixed()# + geom_text(aes(x = chan_discharge, y = areaconcentration,label = SampleName))
 
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + 
+  geom_path(aes(color = Date), size = 2) + 
+  geom_point() + 
+  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) + 
+  scale_color_viridis_d() + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")")) + 
+  coord_fixed()#+ geom_text(aes(label = SampleName))
 
-#May actually not do this after all. Should calculate uncertainties of concentrations and discharge above. 
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)) + 
+  geom_path(aes(color = Date), size = 2) + 
+  geom_point() + 
+  scale_color_viridis_d() + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ 
+  coord_fixed()#+ geom_text(aes(label = SampleName))
+
+ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
+  geom_path(aes(color = Date), size = 2) +
+  geom_point() + 
+  scale_color_viridis_d() + 
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_gray(base_size = 18) + 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")")) + 
+  coord_fixed()#+ geom_text(aes(label = SampleName))
+
 #Estimate Flux ----
 #Constant Mean
 Flux <- Discharge %>%
@@ -441,7 +479,7 @@ min_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrat
 max_constant_mean_metric_tonnes <- sum(Flux$cubic_m_s * BootMean(totalConcentrationDischarge$massconcentration)[3] * 15 * 60, na.rm = T)/10^6
 
 
-#10^BootMean(log10(totalConcentrationDischarge$massconcentration))
+#Flux estimate using regression
 
 Flux$concentration_estimate <- 10^((log10(Flux$cubic_m_s)*
                                        coef(mass_concentration_model)[2] + 
@@ -462,82 +500,7 @@ Flux_uncertainty <- Flux %>%
   mutate(lwr_uncertainty_ci_others = concentration_estimate_lwr - uncertain_discharge*concentration_estimate) %>%
   mutate(upr_uncertainty_ci_others = concentration_estimate_upr + uncertain_discharge*concentration_estimate)
 
-#Flux estimate using regression
-discharge_regression_metric_tonnes <- sum(Flux_uncertainty$concentration_estimate * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
-discharge_regression_metric_tonnes_min <-  sum(Flux_uncertainty$lwr_uncertainty_ci_others * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
-discharge_regression_metric_tonnes_max <-  sum(Flux_uncertainty$upr_uncertainty_ci_others * Flux$cubic_m_s * 15 * 60, na.rm = T)/10^6
 
-runoff_event_ranges = tibble(
-  start = c("2018-10-04 02:15:00", 
-            "2018-10-12 22:30:00", 
-            "2018-11-29 10:30:00", 
-            "2018-12-06 13:00:00", 
-            "2019-01-14 13:00:00",
-            "2019-01-31 15:15:00",
-            "2019-02-02 15:15:00",
-            "2019-02-14 01:45:00",
-            "2019-02-17 06:45:00",
-            "2019-02-21 01:00:00",
-            "2019-03-02 05:00:00",
-            "2019-03-06 08:00:00",
-            "2019-03-20 14:45:00",
-            "2019-05-16 09:30:00",
-            "2019-05-19 03:45:00",
-            "2019-05-22 12:00:00",
-            "2019-05-27 00:45:00"),
-  end = c( "2018-10-04 12:00:00",
-            "2018-10-14 14:30:00",
-            "2018-11-30 22:30:00",
-            "2018-12-08 07:30:00",
-            "2019-01-19 15:15:00",
-            "2019-02-01 13:30:00",
-            "2019-02-06 09:00:00",
-            "2019-02-15 17:45:00",
-            "2019-02-18 20:30:00",
-            "2019-02-22 08:00:00",
-            "2019-03-04 01:30:00",
-            "2019-03-08 04:00:00",
-            "2019-03-21 11:45:00",
-            "2019-05-16 20:45:00",
-            "2019-05-20 19:45:00",
-            "2019-05-24 13:00:00",
-            "2019-05-27 13:15:00")
-  )
-
-runoff_dates <- Flux[0,]
-
-for(n in 1:nrow(runoff_event_ranges)){
-  runoff_dates <- Flux %>%
-    dplyr::filter(dateTime > as.POSIXct(unlist(runoff_event_ranges[n,1]), tz="America/Los_Angeles") & dateTime < as.POSIXct(unlist(runoff_event_ranges[n,2]), tz="America/Los_Angeles")) %>%
-    bind_rows(runoff_dates)
-}
-
-baseflow_dates <- Flux %>%
-  anti_join(runoff_dates)
-
-#Flux during runoff vs baseflow
-BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])
-BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])
-
-runoff_flux <- sum(runoff_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])) * 15 * 60)/10^6
-baseflow_flux <- sum(baseflow_dates$cubic_m_s * (mean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])) * 15 * 60, na.rm = T)/10^6
-
-runoff_baseflow_flux = runoff_flux + baseflow_flux
-
-runoff_flux_min <- sum(runoff_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])[1]) * 15 * 60)/10^6
-baseflow_flux_min <- sum(baseflow_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])[1]) * 15 * 60, na.rm = T)/10^6
-
-runoff_baseflow_flux_min = runoff_flux_min + baseflow_flux_min
-
-
-runoff_flux_max <- sum(runoff_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Runoff"])[3]) * 15 * 60)/10^6
-baseflow_flux_max <- sum(baseflow_dates$cubic_m_s * (BootMean(totalConcentrationDischarge$massconcentration[totalConcentrationDischarge$Runoff == "Nonrunoff"])[3]) * 15 * 60, na.rm = T)/10^6
-
-runoff_baseflow_flux_max = runoff_flux_max+ baseflow_flux_max
-
-#Runoff flow
-sum(runoff_dates$cubic_m_s * 15 * 60) 
-sum(baseflow_dates$cubic_m_s * 15 * 60, na.rm = T)
 
 figure_table <- tibble(
   annual_flux_tonnes = c(runoff_baseflow_flux, constant_mean_metric_tonnes, discharge_regression_metric_tonnes),
