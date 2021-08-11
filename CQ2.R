@@ -172,6 +172,7 @@ ggplot(Discharge)+
   scale_y_log10(breaks = c(0.1,1,10,100,1000), limits = c(0.1, 1000)) + 
   theme_gray()
 
+ggplot() + stat_ecdf(aes(x = Discharge$DEP * 0.0283168)) + scale_x_log10() + theme_gray()
 
 #Compare size classes float and nofloat ----
 datamerge <- data.frame(ParticleID = numeric(), Area = numeric(), SampleName = character(), stringsAsFactors = F)
@@ -475,20 +476,43 @@ Flux$chan_discharge_m <- 10^(log10(Flux$X_00065_00000)*dischargecurve$coefficien
 Flux$chan_discharge_m_lwr <- 10^(PredictQuantileBootLM(x = log10(Flux$X_00065_00000), bootdf = dischargecurverange, minormax = "min")) * 10^(mean(dischargecurve$residuals^2)/2) * 0.0283168
 Flux$chan_discharge_m_upr <- 10^(PredictQuantileBootLM(x = log10(Flux$X_00065_00000), bootdf = dischargecurverange, minormax = "max")) * 10^(mean(dischargecurve$residuals^2)/2) * 0.0283168
 
-mean_concentration_bootstrap <- BootMean(totalConcentrationDischarge$massconcentration)
+mean_concentration_bootstrap <- 10^BootMean(log10(totalConcentrationDischarge$massconcentration))
 
-constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m * mean(totalConcentrationDischarge$massconcentration) * 15 * 60, na.rm = T)/10^6
-min_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_lwr  * BootMean(totalConcentrationDischarge$massconcentration)[1] * 15 * 60, na.rm = T)/10^6
-max_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_upr  * BootMean(totalConcentrationDischarge$massconcentration)[3] * 15 * 60, na.rm = T)/10^6
+constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m * 10^mean(log10(totalConcentrationDischarge$massconcentration)) * 15 * 60, na.rm = T)/10^6
+min_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_lwr  * mean_concentration_bootstrap[1] * 15 * 60, na.rm = T)/10^6
+max_constant_mean_metric_tonnes <- sum(Flux$chan_discharge_m_upr  * mean_concentration_bootstrap[3] * 15 * 60, na.rm = T)/10^6
 
 
 #Flux estimate using regression
+#Flow duration curve
+ggplot() + stat_ecdf(aes(x = Flux$chan_discharge_m)) + scale_x_log10() + theme_gray()
+median(Flux$chan_discharge_m)
+max(Flux$chan_discharge_m)
+min(Flux$chan_discharge_m)
+bins <- seq(from = min(Flux$chan_discharge_m), to = max(Flux$chan_discharge_m), length.out = 10)
+Flux$categories <- cut(Flux$chan_discharge_m, breaks = bins)
+
+Flux_summarized <- Flux %>%
+  mutate(flow = Flux$chan_discharge_m * 60 * 15) %>%
+  group_by(categories) %>%
+  summarize(sum = sum(flow))
+
+ggplot(Flux_summarized) + geom_col(aes(x = categories, y = sum))
+
 #https://fromthebottomoftheheap.net/2016/12/15/simultaneous-interval-revisited/
 hist(log10(totalConcentrationDischarge$massconcentration))
 hist(log10(totalConcentrationDischarge$chan_discharge_m))
+10^mean(log10(totalConcentrationDischarge$chan_discharge_m))
+mean(totalConcentrationDischarge$chan_discharge_m)
+#geometric mean of discharge seems to be a better fit to the central tendancy of the discharge time series. 
+
 shapiro.test(log10(totalConcentrationDischarge$chan_discharge_m))
 shapiro.test(log10(totalConcentrationDischarge$massconcentration))
 #Mass concentration is normally distributed but discharge is not. 
+shapiro.test(log10(Flux$chan_discharge_m))
+hist(log10(Flux$chan_discharge_m))
+10^mean(log10(Flux$chan_discharge_m))
+mean(Flux$chan_discharge_m)
 
 totalConcentrationDischarge$chan_discharge_m_log10 <- log10(totalConcentrationDischarge$chan_discharge_m)
 totalConcentrationDischarge$chan_discharge_m_min_log10 <- log10(totalConcentrationDischarge$chan_discharge_m_min)
@@ -546,21 +570,36 @@ mean_low_flux_concentration <- mean(sort(totalConcentrationDischarge$massconcent
 #center
 flux_pred <- predict(mass.model, Flux, se.fit = TRUE)
 flux_fit_concentration <- 10^(flux_pred$fit)* 10^(mean(mass.model$residuals^2)/2)
-flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* 15 * 60)/10^6
+
+Flux$flux_fit_metric_tonnes_time <- ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration)) * Flux$chan_discharge_m * 15 * 60/10^6
+
+bins <- seq(from = min(Flux$chan_discharge_m), to = max(Flux$chan_discharge_m), length.out = 10)
+Flux$categories <- cut(Flux$chan_discharge_m, breaks = bins)
+
+Flux_summarized <- Flux %>%
+  mutate(flow = Flux$chan_discharge_m * 60 * 15) %>%
+  group_by(categories) %>%
+  summarize(sum = sum(flow))
+
+ggplot(Flux_summarized) + geom_col(aes(x = categories, y = sum))
+
+
+
+flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* Flux$chan_discharge_m* 15 * 60)/10^6
 
 #min
 flux_pred_min <- predict(mass.model, Flux %>%
                            mutate(chan_discharge_m_log10 = chan_discharge_m_min_log10), se.fit = TRUE)
 flux_se.fit_min <- flux_pred_min$se.fit
 flux_fit_concentration_min <- 10^(flux_pred_min$fit - (crit*flux_se.fit_min))* 10^(mean(mass.model$residuals^2)/2)
-flux_fit_metric_tonnes_min <- sum(ifelse(flux_low, mean_low_flux_concentration_range[1], ifelse(flux_high, mean_high_flux_concentration_range[1], flux_fit_concentration_min))* 15 * 60)/10^6
+flux_fit_metric_tonnes_min <- sum(ifelse(flux_low, mean_low_flux_concentration_range[1], ifelse(flux_high, mean_high_flux_concentration_range[1], flux_fit_concentration_min))* Flux$chan_discharge_m_lwr* 15 * 60)/10^6
 
 #max
 flux_pred_max <- predict(mass.model, Flux %>%
                            mutate(chan_discharge_m_log10 = chan_discharge_m_max_log10), se.fit = TRUE)
 flux_se.fit_max <- flux_pred_max$se.fit
 flux_fit_concentration_max <- 10^(flux_pred_max$fit + (crit*flux_se.fit_max))* 10^(mean(mass.model$residuals^2)/2)
-flux_fit_metric_tonnes_max <- sum(ifelse(flux_low, mean_low_flux_concentration_range[3], ifelse(flux_high, mean_high_flux_concentration_range[3], flux_fit_concentration_max))* 15 * 60)/10^6
+flux_fit_metric_tonnes_max <- sum(ifelse(flux_low, mean_low_flux_concentration_range[3], ifelse(flux_high, mean_high_flux_concentration_range[3], flux_fit_concentration_max))* Flux$chan_discharge_m_upr* 15 * 60)/10^6
 
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
@@ -574,6 +613,8 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
   coord_fixed()#+ geom_text(aes(label = SampleName))
 
 
+hist(Flux$chan_discharge_m_log10)
+
 figure_table <- tibble(
   annual_flux_tonnes = c(flux_fit_metric_tonnes, constant_mean_metric_tonnes),
   min_flux_tonnes    = c(flux_fit_metric_tonnes_min, min_constant_mean_metric_tonnes),
@@ -581,29 +622,45 @@ figure_table <- tibble(
   name               = c("Generalized Additive Model", "Constant Mean")
 )
 
+#if I fit the geometric mean to the constant mean model the predictions are almost identical. 
 ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + 
-  geom_point() + 
   geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + 
-  scale_x_log10(limits = c(0.01, 1000)) + 
+  geom_point() + 
+  scale_x_log10() + 
   theme_gray() + 
   labs(y = "", x = "Annual Flux (metric tonnes)")
 
 #USGS Data pull ----
 #Don't run this code again, just useful for first grab.
-#param_cd <- read.csv("Data/param_cd.csv")
-#sites <- c("11066460")
-#parameterCd <- "00065"
-#startDate <- "1988-01-01"
-#endDate <- "2020-01-01"
+param_cd <- read.csv("Data/param_cd.csv")
+sites <- c("11066460")
+parameterCd <- "00065"
+parameterCd_dv <- "00060" #Daily discharge
 
-#availabledata <- whatNWISdata(siteNumber = sites)
-#availabledata <- availabledata %>%
-#  mutate(parm_cd = as.numeric(parm_cd)) %>%
-#  left_join(param_cd)
+startDate <- "1988-01-01"
+endDate <- "2020-01-01"
+
+availabledata <- whatNWISdata(siteNumber = sites)
+availabledata <- availabledata %>%
+  mutate(parm_cd = as.numeric(parm_cd)) %>%
+  left_join(param_cd)
 #ggplot(availabledata, aes(x = begin_date)) + geom_histogram()
 
-#Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
+Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
+Q_dv <- readNWISdv(sites, parameterCd_dv, startDate, endDate, statCd = "00003")
 
+ggplot(Q_dv) + stat_ecdf(aes(x = X_00060_00003* 0.0283168)) + scale_x_log10()
+max(Q_dv$X_00060_00003* 0.0283168)
+min(Q_dv$X_00060_00003* 0.0283168)
+bins <- seq(from = min(Q_dv$X_00060_00003* 0.0283168), to = max(Q_dv$X_00060_00003* 0.0283168), length.out = 100000)
+Q_dv$categories <- cut(Q_dv$X_00060_00003* 0.0283168, breaks = bins)
+
+Q_dv_summarized <- Q_dv %>%
+  mutate(flow = X_00060_00003* 0.0283168 *86400) %>%
+  group_by(categories) %>%
+  summarize(sum = sum(flow))
+
+ggplot(Q_dv_summarized) + geom_col(aes(x = categories, y = sum))
 #setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
 #write.csv(Q, "SiteQ11066460.csv")
 
