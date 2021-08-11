@@ -375,8 +375,8 @@ ggplot(totalConcentrationDischarge, aes(x = summass, y = Mass..g.)) + geom_point
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) +
   geom_smooth(color = "black") + 
   geom_point() + 
-  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  geom_linerange(aes(ymin = areaconcentration_min, ymax =areaconcentration_max)) + 
+  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  #geom_linerange(aes(ymin = areaconcentration_min, ymax =areaconcentration_max)) + 
   #geom_errorbarh(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
   scale_color_viridis_c() +
   scale_x_log10() + 
@@ -391,8 +391,8 @@ plot(model)
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
   geom_smooth(color = "black") + 
-  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) +
+  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  #geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) +
   geom_point() + 
   scale_color_viridis_c() +
   scale_x_log10() + 
@@ -403,14 +403,14 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentra
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) +
   geom_smooth(color = "black") + 
-  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  geom_linerange(aes(ymin = massconcentration_min, ymax =massconcentration_max)) +
+  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  #geom_linerange(aes(ymin = massconcentration_min, ymax =massconcentration_max)) +
   geom_point() + 
   scale_color_viridis_c() +
   scale_x_log10() + 
   scale_y_log10() + 
   theme_gray(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ 
+  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~g^1~m^-3~")"))+ 
   coord_fixed()
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration/countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
@@ -438,8 +438,8 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentrat
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + 
   geom_path(aes(color = Date), size = 2) + 
   geom_point() + 
-  geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) + 
+  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
+  #geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) + 
   scale_color_viridis_d() + 
   scale_x_log10() + 
   scale_y_log10() + 
@@ -563,11 +563,14 @@ flux_low = Flux$chan_discharge_m < min(totalConcentrationDischarge$chan_discharg
 table(flux_high)
 flux_high = Flux$chan_discharge_m > max(totalConcentrationDischarge$chan_discharge_m)
 
-mean_high_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[17:20])
-mean_low_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[1:4])
+#mean_high_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[17:20])
+#mean_low_flux_concentration_range <- BootMean(sort(totalConcentrationDischarge$massconcentration)[1:4])
 
-mean_high_flux_concentration <- mean(sort(totalConcentrationDischarge$massconcentration)[17:20])
-mean_low_flux_concentration <- mean(sort(totalConcentrationDischarge$massconcentration)[1:4])
+arranged <- totalConcentrationDischarge %>%
+  arrange(chan_discharge_m)
+
+mean_high_flux_concentration <- mean(arranged$massconcentration[17:20])
+mean_low_flux_concentration <- mean(arranged$massconcentration[1:4])
 
 #center
 flux_pred <- predict(mass.model, Flux, se.fit = TRUE)
@@ -584,8 +587,6 @@ Flux_summarized <- Flux %>%
   summarize(sum = sum(flow))
 
 ggplot(Flux_summarized) + geom_col(aes(x = categories, y = sum))
-
-
 
 flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* Flux$chan_discharge_m* 15 * 60)/10^6
 
@@ -617,20 +618,7 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentrat
 
 hist(Flux$chan_discharge_m_log10)
 
-figure_table <- tibble(
-  annual_flux_tonnes = c(flux_fit_metric_tonnes, constant_mean_metric_tonnes),
-  min_flux_tonnes    = c(flux_fit_metric_tonnes_min, min_constant_mean_metric_tonnes),
-  max_flux_tonnes    = c(flux_fit_metric_tonnes_max, max_constant_mean_metric_tonnes),
-  name               = c("Generalized Additive Model", "Constant Mean")
-)
 
-#if I fit the geometric mean to the constant mean model the predictions are almost identical. 
-ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + 
-  geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + 
-  geom_point() + 
-  scale_x_log10() + 
-  theme_gray() + 
-  labs(y = "", x = "Annual Flux (metric tonnes)")
 
 #USGS Data pull ----
 #Don't run this code again, just useful for first grab.
@@ -750,9 +738,12 @@ for(n in 1:length(mean_flux)){
   flux_low = Flux_boot$chan_discharge_m < min(totalConcentrationDischarge_boot$chan_discharge_m)
   flux_high = Flux_boot$chan_discharge_m > max(totalConcentrationDischarge_boot$chan_discharge_m)
   
-  mean_high_flux_concentration <- mean(sort(totalConcentrationDischarge_boot$massconcentration)[17:20])
-  mean_low_flux_concentration <- mean(sort(totalConcentrationDischarge_boot$massconcentration)[1:4])
-  
+  arranged <- totalConcentrationDischarge_boot %>%
+    arrange(chan_discharge_m)
+    
+  mean_high_flux_concentration <- mean(arranged$massconcentration[17:20])
+  mean_low_flux_concentration <- mean(arranged$massconcentration[1:4])
+
   #center
   flux_pred <- predict(mass.model, Flux, se.fit = TRUE)
   flux_fit_concentration <- 10^(flux_pred$fit)* 10^(mean(mass.model$residuals^2)/2)
@@ -761,5 +752,44 @@ for(n in 1:length(mean_flux)){
   regression_flux[n] <- sum(Flux_boot$flux_fit_metric_tonnes_time)
 }
 
+figure_table <- tibble(
+  annual_flux_tonnes = c(flux_fit_metric_tonnes, constant_mean_metric_tonnes),
+  min_flux_tonnes    = c(quantile(regression_flux, c(0.025)), quantile(mean_flux, c(0.025))),
+  max_flux_tonnes    = c(quantile(regression_flux, c(0.975)), quantile(mean_flux, c(0.975))),
+  name               = c("Generalized Additive Model", "Constant Mean")
+)
+
+#if I fit the geometric mean to the constant mean model the predictions are almost identical. 
+ggplot(figure_table, aes(y = name, x = annual_flux_tonnes)) + 
+  geom_errorbar(aes(xmin = min_flux_tonnes, xmax = max_flux_tonnes)) + 
+  geom_point() + 
+  scale_x_log10() + 
+  theme_gray() + 
+  labs(y = "", x = "Annual Flux (metric tonnes)")
 
 
+
+#Effective Discharge 2018 ----
+max(Flux$chan_discharge_m)
+min(Flux$chan_discharge_m)
+bins <- seq(from = min(Flux$chan_discharge_m), to = max(Flux$chan_discharge_m), length.out = 10)
+Flux$categories <- cut(Flux$chan_discharge_m, breaks = bins)
+
+Flux_summarized <- Flux %>%
+  mutate(Plasticflux = chan_discharge_m * mean(totalConcentrationDischarge$massconcentration) * 60 * 15) %>%
+  arrange(chan_discharge_m) %>%
+  mutate(cummulative_flux_mean = cumsum(Plasticflux)/sum(Plasticflux)) %>%
+  mutate(cummulative_flux_regression = cumsum(flux_fit_metric_tonnes_time)/sum(flux_fit_metric_tonnes_time))
+
+ggplot(Flux_summarized) + 
+  geom_line(aes(x = chan_discharge_m, y = cummulative_flux_mean)) + 
+  geom_line(aes(x = chan_discharge_m, y = cummulative_flux_regression), color = "red")+
+  scale_x_log10() + 
+  theme_gray()
+
+mean(regression_flux)
+hist(log10(regression_flux))
+mean(mean_flux)
+hist(log10(mean_flux))
+quantile(regression_flux, c(0.025, 0.5, 0.975))
+quantile(mean_flux, c(0.025, 0.5, 0.975))
