@@ -550,6 +550,8 @@ Flux$chan_discharge_m_log10 <- log10(Flux$chan_discharge_m)
 
 mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10, k = 7), data = totalConcentrationDischarge, method = "REML")
 summary.gam(mass.model)
+10^(mean(mass.model$residuals^2)/2)
+
 #plot(model)
 plot(mass.model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
 model_p <- predict_gam(mass.model)
