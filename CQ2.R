@@ -14,6 +14,7 @@ library(tidyr)
 #library(hydrostats)
 #library(plotly)
 library(matrixStats)
+library(tidymv)
 
 #Global settings ----
 options(scipen = 999)
@@ -144,7 +145,7 @@ ggplot(measurements, aes(x = gage_height_va, y = chan_depth_m)) + geom_point() +
 ggplot(measurements, aes(x = gage_height_va, y = chan_velocity_m)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 #Particles with sinking removed.
-csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
+csvfiles_1 <- list.files(path = "C:/Users/winco/Downloads/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
 
 filelistcsv_1 <- csvfiles_1 %>%
   lapply(read.csv)
@@ -469,10 +470,10 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentrat
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")"))+ 
   coord_equal()
 
-model <- gam(log10(countconcentration)~s(log10(chan_discharge_m)), data = totalConcentrationDischarge)
+model <- gam(log10(countconcentration)~s(log10(chan_discharge_m), k = 7), data = totalConcentrationDischarge, method = "REML")
 10^(mean(model$residuals^2)/2)
 summary.gam(model)
-plot(model)
+plot(model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
   geom_smooth(color = "black") + 
@@ -508,49 +509,6 @@ ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = countconcentr
   scale_x_log10() + 
   scale_y_log10()  +
   theme_gray_etal(base_size = 18)
-
-#Hysteresis behavior
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration))  + 
-  geom_path(aes(color = Date), size = 2) + 
-  geom_point() + 
-  scale_color_viridis_d() + 
-  scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + 
-  scale_y_log10(breaks = c(1,10,100,1000,10000), labels = c(1,10,100,1000,10000), limits = c(1,10000)) + 
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")")) + 
-  coord_fixed()# + geom_text(aes(x = chan_discharge, y = areaconcentration,label = SampleName))
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + 
-  geom_path(aes(color = Date), size = 2) + 
-  geom_point() + 
-  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  #geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) + 
-  scale_color_viridis_d() + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")")) + 
-  coord_fixed()#+ geom_text(aes(label = SampleName))
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = measured_mass)) + 
-  geom_path(aes(color = Date), size = 2) + 
-  geom_point() + 
-  scale_color_viridis_d() + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")"))+ 
-  coord_fixed()#+ geom_text(aes(label = SampleName))
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
-  geom_path(aes(color = Date), size = 2) +
-  geom_point() + 
-  scale_color_viridis_d() + 
-  scale_x_log10() + 
-  scale_y_log10() + 
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~num^1~m^-3~")")) + 
-  coord_fixed()#+ geom_text(aes(label = SampleName))
 
 #Estimate Flux ----
 #Uncertaintys of confidence intervals, if variables are correlated, just sum. https://stats.stackexchange.com/questions/223924/how-to-add-up-partial-confidence-intervals-to-create-a-total-confidence-interval
@@ -590,10 +548,18 @@ totalConcentrationDischarge$massconcentration_log10 <- log10(totalConcentrationD
 
 Flux$chan_discharge_m_log10 <- log10(Flux$chan_discharge_m)
 
-mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10, k =7), data = totalConcentrationDischarge, method = "REML")
+mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10, k = 7), data = totalConcentrationDischarge, method = "REML")
 summary.gam(mass.model)
 #plot(model)
 plot(mass.model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
+model_p <- predict_gam(mass.model)
+
+model_p %>%
+    mutate(se.fit = 10^se.fit) %>%
+    ggplot(aes(10^chan_discharge_m_log10, 10^fit)) +
+    geom_smooth_ci() #+
+    scale_x_log10() +
+    scale_y_log10()
 
 Vb <- vcov(mass.model)
 newd <- with(totalConcentrationDischarge, data.frame(chan_discharge_m_log10 = seq(min(chan_discharge_m_log10), max(chan_discharge_m_log10), length = 200)))
@@ -634,79 +600,6 @@ flux_fit_concentration <- 10^(flux_pred$fit)* 10^(mean(mass.model$residuals^2)/2
 Flux$flux_fit_metric_tonnes_time <- ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration)) * Flux$chan_discharge_m * 15 * 60/10^6
 
 flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* Flux$chan_discharge_m* 15 * 60)/10^6
-
-
-#USGS Data pull ----
-#Don't run this code again, just useful for first grab.
-param_cd <- read.csv("Data/param_cd.csv")
-sites <- c("11066460")
-#parameterCd <- "00065"
-parameterCd_dv <- "00060" #Daily discharge
-
-startDate <- "1990-10-01"
-endDate <- "2020-09-30"
-
-availabledata <- whatNWISdata(siteNumber = sites)
-availabledata <- availabledata %>%
-  mutate(parm_cd = as.numeric(parm_cd)) %>%
-  left_join(param_cd)
-ggplot(availabledata, aes(x = begin_date)) + geom_histogram()
-
-#Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
-Q_dv <- readNWISdv(sites, parameterCd_dv, startDate, endDate, statCd = "00003")
-
-#ggplot(Q_dv) + stat_ecdf(aes(x = X_00060_00003* 0.0283168)) + scale_x_log10()
-
-water_Flux_summarized <- Q_dv %>%
-  mutate(discharge_m = X_00060_00003* 0.0283168) %>%
-  arrange(discharge_m) %>%
-  mutate(cummulative_flux = cumsum(discharge_m * 86400)/sum(discharge_m * 86400)) 
-
-ggplot(water_Flux_summarized) + 
-  geom_line(aes(x = discharge_m, y = cummulative_flux), size = 4) + 
-  #geom_line(aes(x = chan_discharge_m, y = cummulative_flux_regression), color = "red", size = 4)+
-  scale_x_log10(limits = c(0.1, 1000)) + 
-  theme_gray_etal() + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = "Cumulative Water Volume (% Total)")
-
-#Low Flows 
-water_Flux_summarized %>%
-  filter(discharge_m < 3) %>%
-  pull(discharge_m) %>%
-  mean()
-
-#High Flows
-water_Flux_summarized %>%
-  filter(discharge_m > 3) %>%
-  pull(discharge_m) %>%
-  mean()
-
-#2 year flow
-years <- water_Flux_summarized %>%
-  mutate(Year = format(Date, format = "%Y")) %>%
-  group_by(Year) %>%
-  summarize(maxyearlyflow = max(discharge_m)) %>%
-  ungroup() %>%
-  mutate(recurrance = (length(Year) + 1)/rank(1/maxyearlyflow)) %>%
-  arrange(recurrance)
-
-#max(Q_dv$X_00060_00003* 0.0283168)
-#min(Q_dv$X_00060_00003* 0.0283168)
-#bins <- seq(from = min(Q_dv$X_00060_00003* 0.0283168), to = max(Q_dv$X_00060_00003* 0.0283168), length.out = 100000)
-#Q_dv$categories <- cut(Q_dv$X_00060_00003* 0.0283168, breaks = bins)
-
-#Q_dv_summarized <- Q_dv %>%
-#  mutate(flow = X_00060_00003* 0.0283168 *86400) %>%
-#  group_by(categories) %>%
-#  summarize(sum = sum(flow))
-
-#ggplot(Q_dv_summarized) + geom_col(aes(x = categories, y = sum))
-#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
-#write.csv(Q, "SiteQ11066460.csv")
-
-#ratingdata <- readNWISrating(sites, "base")
-#measurements <- readNWISmeas(sites, expanded = T, tz = "America/Los_Angeles")
-#write.csv(measurements, "measurements.csv")
 
 
 #Bootstrap all datasets 10k times to get fluxes---- 
@@ -833,6 +726,8 @@ totalConcentrationDischarge$countconcentration_max <- as.vector(rowQuantiles(sam
 totalConcentrationDischarge$massconcentration_min <- as.vector(rowQuantiles(sample_massconcentration_boot, probs = c(0.025)))
 totalConcentrationDischarge$massconcentration_max <- as.vector(rowQuantiles(sample_massconcentration_boot, probs = c(0.975)))
 
+write.csv(totalConcentrationDischarge, "totalConcentrationDischarge_booted.csv")
+
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + 
   geom_path(aes(color = Date), size = 2) + 
   geom_linerange(aes(xmin = discharge_min, xmax =discharge_max), color = "black", alpha = 0.5) + 
@@ -846,25 +741,25 @@ ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentra
   coord_fixed()#+ geom_text(aes(label = SampleName))
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) + 
-  geom_smooth(color = "black") +
+  geom_smooth(color = "black", method = "gam", formula = y ~ s(x, bs = "cs", k = 7)) +
   geom_linerange(aes(xmin = discharge_min, xmax =discharge_max)) + 
   geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) + 
   geom_point(color = "black", alpha = 0.5, size = 2) + 
   scale_color_viridis_d() + 
   scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), limits = c(1, 10000)) + 
-  scale_y_log10(breaks = c(0.001, 0.01, 0.1, 1, 10, 100, 1000, 10000), limits = c(0.001,10000)) + 
+  scale_y_log10(breaks = c(0.001, 0.01, 0.1, 1, 10, 100, 1000), limits = c(0.001,1000)) + 
   theme_gray_etal(base_size = 16) + 
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")")) + 
   coord_fixed()#+ geom_text(aes(label = SampleName))
 
 ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) + 
-  geom_smooth(color = "black") +
+  geom_smooth(color = "black", method = "gam", formula = y ~ s(x, bs = "cs", k = 7)) +
   geom_linerange(aes(xmin = discharge_min, xmax =discharge_max)) + 
   geom_linerange(aes(ymin = massconcentration_min, ymax = massconcentration_max)) + 
   geom_point(color = "black", alpha = 0.5, size = 2) + 
   scale_color_viridis_d() + 
   scale_x_log10(breaks = c(1, 10, 100, 1000, 10000), limits = c(1, 10000)) + 
-  scale_y_log10(breaks = c(0.0001, 0.001, 0.01, 0.1, 1, 10, 100, 1000), limits = c(0.0001,1000)) + 
+  scale_y_log10(breaks = c(0.0001, 0.001, 0.01, 0.1, 1, 10, 100), limits = c(0.0001,100)) + 
   theme_gray_etal(base_size = 16) + 
   labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~g^1~m^-3~")")) + 
   coord_fixed()#+ geom_text(aes(label = SampleName))
@@ -909,3 +804,76 @@ hist(log10(mean_flux))
 quantile(regression_flux, c(0.025, 0.5, 0.975))
 quantile(mean_flux, c(0.025, 0.5, 0.975))
 
+
+
+#USGS Data pull ----
+#Don't run this code again, just useful for first grab.
+param_cd <- read.csv("Data/param_cd.csv")
+sites <- c("11066460")
+#parameterCd <- "00065"
+parameterCd_dv <- "00060" #Daily discharge
+
+startDate <- "1990-10-01"
+endDate <- "2020-09-30"
+
+availabledata <- whatNWISdata(siteNumber = sites)
+availabledata <- availabledata %>%
+    mutate(parm_cd = as.numeric(parm_cd)) %>%
+    left_join(param_cd)
+ggplot(availabledata, aes(x = begin_date)) + geom_histogram()
+
+#Q <- readNWISuv(sites, parameterCd, startDate, endDate, tz = "America/Los_Angeles")
+Q_dv <- readNWISdv(sites, parameterCd_dv, startDate, endDate, statCd = "00003")
+
+#ggplot(Q_dv) + stat_ecdf(aes(x = X_00060_00003* 0.0283168)) + scale_x_log10()
+
+water_Flux_summarized <- Q_dv %>%
+    mutate(discharge_m = X_00060_00003* 0.0283168) %>%
+    arrange(discharge_m) %>%
+    mutate(cummulative_flux = cumsum(discharge_m * 86400)/sum(discharge_m * 86400)) 
+
+ggplot(water_Flux_summarized) + 
+    geom_line(aes(x = discharge_m, y = cummulative_flux), size = 4) + 
+    #geom_line(aes(x = chan_discharge_m, y = cummulative_flux_regression), color = "red", size = 4)+
+    scale_x_log10(limits = c(0.1, 1000)) + 
+    theme_gray_etal() + 
+    labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = "Cumulative Water Volume (% Total)")
+
+#Low Flows 
+water_Flux_summarized %>%
+    filter(discharge_m < 3) %>%
+    pull(discharge_m) %>%
+    mean()
+
+#High Flows
+water_Flux_summarized %>%
+    filter(discharge_m > 3) %>%
+    pull(discharge_m) %>%
+    mean()
+
+#2 year flow
+years <- water_Flux_summarized %>%
+    mutate(Year = format(Date, format = "%Y")) %>%
+    group_by(Year) %>%
+    summarize(maxyearlyflow = max(discharge_m)) %>%
+    ungroup() %>%
+    mutate(recurrance = (length(Year) + 1)/rank(1/maxyearlyflow)) %>%
+    arrange(recurrance)
+
+#max(Q_dv$X_00060_00003* 0.0283168)
+#min(Q_dv$X_00060_00003* 0.0283168)
+#bins <- seq(from = min(Q_dv$X_00060_00003* 0.0283168), to = max(Q_dv$X_00060_00003* 0.0283168), length.out = 100000)
+#Q_dv$categories <- cut(Q_dv$X_00060_00003* 0.0283168, breaks = bins)
+
+#Q_dv_summarized <- Q_dv %>%
+#  mutate(flow = X_00060_00003* 0.0283168 *86400) %>%
+#  group_by(categories) %>%
+#  summarize(sum = sum(flow))
+
+#ggplot(Q_dv_summarized) + geom_col(aes(x = categories, y = sum))
+#setwd("G:/My Drive/GrayLab/Projects/Plastics/ActiveProjects/CQRelationships/Data/Raw Data")
+#write.csv(Q, "SiteQ11066460.csv")
+
+#ratingdata <- readNWISrating(sites, "base")
+#measurements <- readNWISmeas(sites, expanded = T, tz = "America/Los_Angeles")
+#write.csv(measurements, "measurements.csv")
