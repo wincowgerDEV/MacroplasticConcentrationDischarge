@@ -147,7 +147,7 @@ ggplot(measurements, aes(x = gage_height_va, y = chan_velocity_m)) + geom_point(
 ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 
 #Particles with sinking removed.
-csvfiles_1 <- list.files(path = "C:/Users/winco/Downloads/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
+csvfiles_1 <- list.files(path = "Data/Santa Ana River SamplesNoFloatRemoved/", pattern = ".csv", recursive = T, full.names = T)
 
 filelistcsv_1 <- csvfiles_1 %>%
   lapply(read.csv)
