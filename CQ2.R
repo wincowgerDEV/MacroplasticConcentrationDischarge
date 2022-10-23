@@ -124,10 +124,13 @@ precipitation <- read.csv("Data/RiversideMuniAirport_Cleaned.csv") %>%
 
 #Sample data
 sampledata <- read.csv("Data/SampleMetaData.csv")
+
 #Particles that do not float.
 NoFloat <- read.csv("Data/MasterNoFloat_Clean.csv")
+
 #Continuous discharge
 Q <- read.csv("Data/SiteQ11066460.csv")
+
 #Stage discharge relationships.
 measurements <- read.csv("Data/measurements.csv") %>%
   mutate(Date = as.Date(measurement_dt)) %>%
@@ -136,14 +139,13 @@ measurements <- read.csv("Data/measurements.csv") %>%
   mutate(chan_velocity_m = chan_velocity * 0.3048) %>%
   mutate(gage_height_m = gage_height_va * 0.3048) %>%
   mutate(chan_discharge_m = chan_discharge * 0.0283168)
-#need to correct the gage_height_va
-#RatingCurve <- read_excel("Data/Riverside/GageData.xlsx", sheet = "Rating Curve")
 
 #Higher uncertainties when using rating curves for higher flows because few data points. 
-
+#Look at USGS rating curve data
 ggplot(measurements, aes(x = gage_height_va, y = chan_depth_m)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 ggplot(measurements, aes(x = gage_height_va, y = chan_velocity_m)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
 ggplot(measurements, aes(x = gage_height_va, y = chan_discharge)) + geom_point() + geom_smooth(method = "lm") + scale_y_log10() + scale_x_log10()
+
 #Particles with sinking removed.
 csvfiles_1 <- list.files(path = "C:/Users/winco/Downloads/Santa Ana River SamplesNoFloatRemoved", pattern = ".csv", recursive = T, full.names = T)
 
@@ -153,7 +155,9 @@ filelistcsv_1 <- csvfiles_1 %>%
 csvfiles <- csvfiles_1
 filelistcsv <- filelistcsv_1
 
-#Plastic Masses
+#Analysis ----
+
+##Plastic Masses to particle size relations ----
 Master <- read.csv("Data/ParticleSizeConversionData/Plastic Masses/MasterSheet - Sheet1.csv")
 
 Mast <- Master[complete.cases(Master$Mass),] %>%
@@ -163,9 +167,6 @@ nrow(Mast)
 
 massmodel <- lm(log10(Mass) ~ log10(Area), data = Mast)
 
-#massmodelcurverange <- BootLM(y = log10(Mast$Mass), x = log10(Mast$Area))
-
-#massmodelboot <- BootLM(x = log10(Mast$Area), y = log10(Mast$Mass))
 ggplot(Mast, aes(y = Mass, x =  Area)) + 
   geom_point() +
   geom_smooth(method = "lm") + 
@@ -186,7 +187,7 @@ ggplot(Mast %>% filter(Material %in% c("Film", "Foam", "Hard Plastic")), aes(y =
     scale_y_log10() +
     labs(x = bquote("Particle Projected Area ("~mm^2~")"), y = "Particle Mass (g)")
 
-#Flow models ----
+##Flow models ----
 dischargecurve <- lm(log10(chan_discharge) ~ log10(gage_height_va), data = measurements)
 summary(dischargecurve)
 
@@ -203,8 +204,6 @@ summary(lm(log10(chan_discharge_m) ~ log10(gage_height_m), data = measurements))
 summary(lm(log10(chan_velocity_m) ~ log10(gage_height_m), data = measurements))
 
 summary(lm(log10(chan_depth_m) ~ log10(gage_height_m), data = measurements))
-
-#areacurve <- gam(log10() ~ log10(gage_height_va), data = measurements)
 
 #Discharge figure ----
 Discharge <- Q %>%
@@ -240,14 +239,7 @@ ggplot()+
   scale_y_log10(limits = c(0.1, 1000)) + 
   theme_gray_etal()
 
-ggplot()+ 
-  geom_line(data = daily_flow, aes(y = daily_flow_m, x = Date), size = 1) + 
-  geom_col(data = precipitation, aes(x= Date, y = precip_mm)) + 
-  scale_x_date(limits = c(as.POSIXct("2018-10-01 00:00:00", tz="America/Los_Angeles"),as.POSIXct("2019-10-30 23:59:00", tz="America/Los_Angeles"))) + labs(y = "Discharge (cms)", x = "Date Time") + 
-  geom_vline(xintercept = c(as.POSIXct("2019-02-02 12:00:00", tz="America/Los_Angeles"), as.POSIXct("2019-01-19 12:00:00", tz="America/Los_Angeles"), as.POSIXct("2019-08-09 12:00:00", tz="America/Los_Angeles"), as.POSIXct("2019-10-21 12:00:00", tz="America/Los_Angeles"), as.POSIXct("2019-2-13 12:00:00", tz="America/Los_Angeles"))) + 
-  scale_y_log10(breaks = c(0.1,1,10,100,1000), limits = c(0.1, 1000)) + 
-  theme_gray_etal()
-
+##Exceedence probabilities
 ggplot() + stat_ecdf(aes(x = Discharge$DEP * 0.0283168)) + scale_x_log10() + theme_gray_etal()
 
 #Compare size classes float and nofloat ----
@@ -309,7 +301,6 @@ MasterList <- datamerge %>%
   dplyr::filter(!SampleName %in% RemoveThese) %>%
   dplyr::filter(Area > 25) 
 
-
 sampledataclean_pre <- sampledata %>%
   mutate_if(is.factor, as.character) %>%
   mutate(dateTime = as.POSIXct(strptime(paste(Date, Start.Time, sep = " "), format = "%m/%d/%Y %H:%M"), tz = "America/Los_Angeles")) %>%
@@ -319,8 +310,7 @@ sampledataclean_pre <- sampledata %>%
   mutate(chan_discharge_m = chan_discharge * 0.0283168) %>%
   right_join(MasterList) 
 
-#PredictQuantileBootLM(x = log10(sampledataclean_pre$gage_height), bootdf = dischargecurverange, minormax = "min")
-
+#hydrograph Feb 2
 sampledataclean_pre %>%
   dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
@@ -333,6 +323,7 @@ sampledataclean_pre %>%
   labs(y = "Discharge (cms)", x = "Date Time") + 
   theme_gray_etal()
 
+#Hydrograph Jan 17
 sampledataclean_pre %>%
   dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
@@ -345,6 +336,7 @@ sampledataclean_pre %>%
   labs(y = "Discharge (cms)", x = "Date Time") + 
   theme_gray_etal()
 
+#Hydrograph lowflow
 sampledataclean_pre %>%
   dplyr::select(chan_discharge_m, SampleName, dateTime) %>%
   distinct() %>%
@@ -454,52 +446,6 @@ ggplot(totalConcentrationDischarge, aes(y = summass, x = Mass..g.)) +
   coord_fixed() +
   labs(x = "Sample Mass Observed (g)", y = "Sample Mass Estimated (g)")
 
-#Concentration discharge relationships ----
-#Linear Relatoinship, concentration - discharge
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration)) +
-  geom_smooth(color = "black") + 
-  geom_point() + 
-  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  #geom_linerange(aes(ymin = areaconcentration_min, ymax =areaconcentration_max)) + 
-  #geom_errorbarh(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  scale_color_viridis_c() +
-  scale_x_log10(limits = c(1,1000)) + 
-  scale_y_log10(breaks = c(1, 10,100,1000,10000,100000, 1000000, 10000000), limits = c(1,10000000))  +
-  theme_gray_etal(base_size = 12) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Area Concentration ("~mm^2~m^-3~")"))+ 
-  coord_equal()
-
-model <- gam(log10(countconcentration)~s(log10(chan_discharge_m), k = 7), data = totalConcentrationDischarge, method = "REML")
-10^(mean(model$residuals^2)/2)
-summary.gam(model)
-plot(model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = countconcentration)) +
-  geom_smooth(color = "black") + 
-  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  #geom_linerange(aes(ymin = countconcentration_min, ymax =countconcentration_max)) +
-  geom_point() + 
-  scale_color_viridis_c() +
-  scale_x_log10(limits = c(1,1000)) + 
-  scale_y_log10(breaks = c(0.01, 0.1, 1, 10,100,1000, 10000), limits = c(0.01,10000))  +
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ 
-  coord_fixed()
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = massconcentration)) +
-  geom_smooth(color = "black") + 
-  #geom_linerange(aes(xmin = chan_discharge_m_min, xmax =chan_discharge_m_max)) + 
-  #geom_linerange(aes(ymin = massconcentration_min, ymax =massconcentration_max)) +
-  geom_point() + 
-  scale_color_viridis_c() +
-  scale_x_log10() + 
-  scale_y_log10() + 
-  theme_gray_etal(base_size = 18) + 
-  labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Mass Concentration ("~g^1~m^-3~")"))+ 
-  coord_fixed()
-
-ggplot(totalConcentrationDischarge, aes(x = chan_discharge_m, y = areaconcentration/countconcentration)) + geom_point() + geom_smooth(method = "lm", color = "black") #+ scale_x_log10(breaks = c(1,10,100,1000), labels = c(1,10,100,1000), limits = c(1,1000)) + scale_y_log10(breaks = c(0.01,0.1,1,10,100), labels = c(0.01,0.1,1,10,100), limits = c(0.01,100)) + theme_gray_etal_etal(base_size = 18) + labs(x = bquote("Discharge ("~m^3~s^-1~")"), y = bquote("Count Concentration ("~num^1~m^-3~")"))+ coord_fixed()
 
 #Fit area to count concentrations.
 ggplot(totalConcentrationDischarge, aes(x = areaconcentration, y = countconcentration)) +
@@ -548,41 +494,19 @@ totalConcentrationDischarge$massconcentration_log10 <- log10(totalConcentrationD
 
 Flux$chan_discharge_m_log10 <- log10(Flux$chan_discharge_m)
 
+#Concentration discharge relationships ----
+#count concentration model.
+model <- gam(log10(countconcentration)~s(log10(chan_discharge_m), k = 7), data = totalConcentrationDischarge, method = "REML")
+10^(mean(model$residuals^2)/2)
+summary.gam(model)
+plot(model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
+
+#mass concentration model.
 mass.model <- gam(massconcentration_log10~s(chan_discharge_m_log10, k = 7), data = totalConcentrationDischarge, method = "REML")
 summary.gam(mass.model)
 10^(mean(mass.model$residuals^2)/2)
-
-#plot(model)
 plot(mass.model, shade = TRUE,  seWithMean = TRUE, residuals = TRUE, pch = 16, cex = 0.8)
 model_p <- predict_gam(mass.model)
-
-model_p %>%
-    mutate(se.fit = 10^se.fit) %>%
-    ggplot(aes(10^chan_discharge_m_log10, 10^fit)) +
-    geom_smooth_ci() #+
-    scale_x_log10() +
-    scale_y_log10()
-
-Vb <- vcov(mass.model)
-newd <- with(totalConcentrationDischarge, data.frame(chan_discharge_m_log10 = seq(min(chan_discharge_m_log10), max(chan_discharge_m_log10), length = 200)))
-pred <- predict(mass.model, newd, se.fit = TRUE)
-se.fit <- pred$se.fit
-set.seed(42)
-N <- 10000
-BUdiff <- rmvn(N, mu = rep(0, nrow(Vb)), sig = Vb)
-Cg <- predict(mass.model, newd, type = "lpmatrix")
-simDev <- Cg %*% t(BUdiff)
-absDev <- abs(sweep(simDev, 1, se.fit, FUN = "/"))
-masd <- apply(absDev, 2L, max)
-crit <- quantile(masd, prob = 0.95, type = 8)
-pred <- transform(cbind(data.frame(pred), newd),
-                  uprP = fit + (2 * se.fit),
-                  lwrP = fit - (2 * se.fit),
-                  uprS = fit + (crit * se.fit),
-                  lwrS = fit - (crit * se.fit))
-ggplot(pred, aes(x = chan_discharge_m_log10)) +
-  geom_ribbon(aes(ymin = lwrS, ymax = uprS), alpha = 0.2, fill = "red") +
-  geom_ribbon(aes(ymin = lwrP, ymax = uprP), alpha = 0.2, fill = "red")
 
 #add in mean concentrations and uncertainties if high or low
 flux_low = Flux$chan_discharge_m < min(totalConcentrationDischarge$chan_discharge_m)
@@ -598,9 +522,7 @@ mean_low_flux_concentration <- mean(arranged$massconcentration[1:4])
 #center
 flux_pred <- predict(mass.model, Flux, se.fit = TRUE)
 flux_fit_concentration <- 10^(flux_pred$fit)* 10^(mean(mass.model$residuals^2)/2)
-
 Flux$flux_fit_metric_tonnes_time <- ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration)) * Flux$chan_discharge_m * 15 * 60/10^6
-
 flux_fit_metric_tonnes <- sum(ifelse(flux_low, mean_low_flux_concentration, ifelse(flux_high, mean_high_flux_concentration, flux_fit_concentration))* Flux$chan_discharge_m* 15 * 60)/10^6
 
 
